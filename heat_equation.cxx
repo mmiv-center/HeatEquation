@@ -9,6 +9,8 @@
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
+#include "itkNearestNeighborInterpolateImageFunction.h"
+#include "itkResampleImageFilter.h"
 
 #include "json.hpp"
 #include "metaCommand.h"
@@ -127,6 +129,8 @@ int main(int argc, char *argv[]) {
   command.AddOptionField("Iterations", "iterations", MetaCommand::INT, true);
 
   // need an option to supersample
+  command.SetOption("SuperSample", "s", false, "Specify the number up-sampling steps (0).");
+  command.AddOptionField("SuperSample", "supersample", MetaCommand::INT, true);
 
   command.SetOption("Verbose", "v", false, "Print more verbose output");
 
@@ -141,6 +145,19 @@ int main(int argc, char *argv[]) {
   if (!boost::filesystem::exists(input)) {
     std::cout << "Could not find the input file..." << std::endl;
     exit(1);
+  }
+
+  int supersampling = 0;
+  if (command.GetOptionWasSet("SuperSample"))
+    supersampling = command.GetValueAsInt("SuperSample", "supersample");
+
+  if (supersampling > 10) {
+    fprintf(stdout, "Error: too much super-sampling...\n");
+    exit(0);
+  }
+  if (supersampling < 0) {
+    fprintf(stdout, "Error: don't know how to supersample that...\n");
+    exit(-1);
   }
 
   int iterations = 1;
@@ -209,12 +226,69 @@ int main(int argc, char *argv[]) {
   imageReader->SetFileName(input);
   imageReader->Update();
 
+  ImageType::Pointer inputVol = imageReader->GetOutput();
+  ImageType::SpacingType spacing = inputVol->GetSpacing();
+  ImageType::RegionType region = inputVol->GetLargestPossibleRegion();
+  ImageType::SizeType dims = region.GetSize();
+  ImageType::PointType origin = inputVol->GetOrigin();
+
+  // do supersampling if required
+  if (supersampling > 0) {
+    resultJSON["SuperSamplingFactor"] = supersampling;
+    using ResampleFilterType = itk::ResampleImageFilter<ImageType, ImageType>;
+
+    ResampleFilterType::Pointer resampler = ResampleFilterType::New();
+    using TransformType = itk::IdentityTransform<double, 3>;
+
+    TransformType::Pointer transform = TransformType::New();
+    transform->SetIdentity();
+
+    resampler->SetTransform(transform);
+    // using InterpolatorType = itk::LinearInterpolateImageFunction<ImageType, double>;
+    using InterpolatorType = itk::NearestNeighborInterpolateImageFunction<ImageType, double>;
+
+    InterpolatorType::Pointer interpolator = InterpolatorType::New();
+
+    resampler->SetInterpolator(interpolator);
+
+    resampler->SetDefaultPixelValue(0); // highlight regions without source
+
+    OutputImageType::SpacingType spacingOut;
+
+    spacingOut[0] = spacing[0] / supersampling;
+    spacingOut[1] = spacing[1] / supersampling;
+    spacingOut[2] = spacing[2] / supersampling;
+    resultJSON["OutputSpacing"] = json::array();
+    resultJSON["OutputSpacing"].push_back(spacingOut[0]);
+    resultJSON["OutputSpacing"].push_back(spacingOut[1]);
+    resultJSON["OutputSpacing"].push_back(spacingOut[2]);
+
+    resampler->SetOutputSpacing(spacingOut);
+    resampler->SetOutputOrigin(inputVol->GetOrigin());
+    resampler->SetOutputDirection(inputVol->GetDirection());
+    ImageType::SizeType size;
+
+    size[0] = static_cast<itk::SizeValueType>(dims[0] * supersampling);
+    size[1] = static_cast<itk::SizeValueType>(dims[1] * supersampling);
+    size[2] = static_cast<itk::SizeValueType>(dims[2] * supersampling);
+    resultJSON["OutputSize"] = json::array();
+    resultJSON["OutputSize"].push_back(size[0]);
+    resultJSON["OutputSize"].push_back(size[1]);
+    resultJSON["OutputSize"].push_back(size[2]);
+
+    resampler->SetSize(size);
+    resampler->SetInput(inputVol);
+
+    resampler->Update();
+    inputVol = resampler->GetOutput();
+  }
+  spacing = inputVol->GetSpacing();
+  region = inputVol->GetLargestPossibleRegion();
+  dims = region.GetSize();
+  origin = inputVol->GetOrigin();
+
   // compute the bounding box and the dimensions
   float bb[6];
-  ImageType::SpacingType spacing = imageReader->GetOutput()->GetSpacing();
-  ImageType::RegionType region = imageReader->GetOutput()->GetLargestPossibleRegion();
-  ImageType::SizeType dims = region.GetSize();
-  ImageType::PointType origin = imageReader->GetOutput()->GetOrigin();
   bb[0] = origin[0];
   bb[2] = origin[1];
   bb[4] = origin[2];
@@ -227,7 +301,7 @@ int main(int argc, char *argv[]) {
   output.resize(dims[0] * dims[1] * dims[2]); // the output temperature as float
   std::fill(output.begin(), output.end(), 0.0);
   data.resize(dims[0] * dims[1] * dims[2]); // the labels as int
-  itk::ImageRegionIterator<ImageType> volIterator(imageReader->GetOutput(), region);
+  itk::ImageRegionIterator<ImageType> volIterator(inputVol, region);
   size_t counter = 0;
   while (!volIterator.IsAtEnd()) {
     data[counter] = volIterator.Get();
@@ -247,9 +321,9 @@ int main(int argc, char *argv[]) {
   OutputImageType::Pointer outVol = OutputImageType::New();
   outVol->SetRegions(region);
   outVol->Allocate();
-  outVol->SetOrigin(imageReader->GetOutput()->GetOrigin());
-  outVol->SetSpacing(imageReader->GetOutput()->GetSpacing());
-  outVol->SetDirection(imageReader->GetOutput()->GetDirection());
+  outVol->SetOrigin(inputVol->GetOrigin());
+  outVol->SetSpacing(inputVol->GetSpacing());
+  outVol->SetDirection(inputVol->GetDirection());
   itk::ImageRegionIterator<OutputImageType> outIterator(outVol, region);
   counter = 0;
   while (!outIterator.IsAtEnd()) {

@@ -215,7 +215,7 @@ int main(int argc, char *argv[]) {
 
   std::string output_filename2;
   if (lastdot == std::string::npos)
-    output_filename2 = fn + "_gradient.nii";
+    output_filename2 = fn + "_gradient.nrrd";
   else
     output_filename2 = fn.substr(0, lastdot) + "_gradient.nrrd";
 

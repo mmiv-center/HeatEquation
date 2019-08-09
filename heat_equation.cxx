@@ -128,11 +128,13 @@ int main(int argc, char *argv[]) {
   command.SetOption("Iterations", "i", false, "Specify the number of iterations (default 1) the code is run.");
   command.AddOptionField("Iterations", "iterations", MetaCommand::INT, true);
 
-  // need an option to supersample
-  command.SetOption("SuperSample", "s", false, "Specify the number up-sampling steps (0).");
+  // supersample the input (2 means 4 times more voxel)
+  command.SetOption("SuperSample", "s", false, "Specify the number up-sampling steps using nearest neighboor interpolation (0).");
   command.AddOptionField("SuperSample", "supersample", MetaCommand::INT, true);
 
-  command.SetOption("Verbose", "v", false, "Print more verbose output");
+  // quantize the output temperature
+  command.SetOption("Quantize", "q", false, "Quantize the output into N different regions.");
+  command.AddOptionField("Quantize", "quantize", MetaCommand::INT, true);
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -150,7 +152,6 @@ int main(int argc, char *argv[]) {
   int supersampling = 0;
   if (command.GetOptionWasSet("SuperSample"))
     supersampling = command.GetValueAsInt("SuperSample", "supersample");
-
   if (supersampling > 10) {
     fprintf(stdout, "Error: too much super-sampling...\n");
     exit(0);
@@ -159,7 +160,11 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "Error: don't know how to supersample that...\n");
     exit(-1);
   }
+  int quantize = -1; // don't quantize
+  if (command.GetOptionWasSet("Quantize"))
+    quantize = command.GetValueAsInt("Quantize", "quantize");
 
+  // todo: instead of number of iterations it would be good to have convergence error (might require double computations)
   int iterations = 1;
   if (command.GetOptionWasSet("Iterations"))
     iterations = command.GetValueAsInt("Iterations", "iterations");
@@ -371,6 +376,123 @@ int main(int argc, char *argv[]) {
   } catch (itk::ExceptionObject &ex) {
     std::cout << ex << std::endl;
     return EXIT_FAILURE;
+  }
+
+  // quantize the output temperature
+  if (quantize > 0) {
+    std::string output_filename3;
+    if (lastdot == std::string::npos)
+      output_filename3 = fn + "_temperature_quantized.nii";
+    else
+      output_filename3 = fn.substr(0, lastdot) + "_temperature_quantized.nii";
+
+    resultJSON["output_temperature_quantized"] = outdir + "/" + output_filename3;
+
+    // what is the temperature range we need to quantize?
+
+    OutputImageType::Pointer outQuant = OutputImageType::New();
+    outQuant->SetRegions(region);
+    outQuant->Allocate();
+    outQuant->SetOrigin(inputVol->GetOrigin());
+    outQuant->SetSpacing(inputVol->GetSpacing());
+    outQuant->SetDirection(inputVol->GetDirection());
+    itk::ImageRegionIterator<OutputImageType> oIterator(outQuant, region);
+    // compute the quartiles for all voxel in the non-zero non-fixed temperature voxel
+    int h_size = 200;
+    std::vector<size_t> histogram(h_size);
+    std::map<int, float>::iterator mit;
+    float maxTemp, minTemp; // histogram maps from max to min temperature
+    for (mit = temperatureByMaterial.begin(); mit != temperatureByMaterial.end(); mit++) {
+      if (mit == temperatureByMaterial.begin()) {
+        maxTemp = minTemp = mit->second;
+      }
+      if (mit->second > maxTemp)
+        maxTemp = mit->second;
+      if (mit->second < minTemp)
+        minTemp = mit->second;
+    }
+
+    itk::ImageRegionIterator<OutputImageType> temperatureIterator(outVol, region);
+    itk::ImageRegionIterator<ImageType> maskIterator(inputVol, region);
+
+    while (!temperatureIterator.IsAtEnd() && !maskIterator.IsAtEnd()) {
+      if (maskIterator.Get() != 0) {
+        if (temperatureByMaterial.find(maskIterator.Get()) == temperatureByMaterial.end()) {
+          // this label does not have a fixed temperature, lets use it
+          int idx = ((temperatureIterator.Get() - minTemp) / (maxTemp - minTemp)) * (h_size - 1);
+          if (idx < 0)
+            idx = 0;
+          if (idx > h_size - 1)
+            idx = h_size - 1;
+
+          histogram[idx]++;
+        }
+      }
+      ++temperatureIterator;
+      ++maskIterator;
+    }
+    // now compute the normalized cummulative histogram
+    std::vector<double> cum_hist(h_size);
+    double sum = 0.0;
+    for (int i = 0; i < h_size; i++) {
+      sum += histogram[i];
+      cum_hist[i] = histogram[i];
+      if (i > 0) {
+        cum_hist[i] = cum_hist[i] + cum_hist[i - 1];
+      }
+    }
+    for (int i = 0; i < h_size; i++) {
+      cum_hist[i] /= sum;
+    }
+    std::vector<double> quartiles(quantize);
+    // now set the threshold temperature for each quartile range
+    for (int i = 0; i < quantize; i++) {
+      // what is the first temperature where we reach the current quantile?
+      double quant_step = i * (1.0 / quantize); // lower border of quantile
+      for (int j = 0; j < h_size; j++) {
+        if (cum_hist[j] > quant_step) {
+          quartiles[i] = (j / h_size) * (maxTemp - minTemp) + minTemp; // temperature at this index
+          break;
+        }
+      }
+    }
+    temperatureIterator.GoToBegin();
+    itk::ImageRegionIterator<OutputImageType> outputIterator(outQuant, region);
+    while (!temperatureIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !outputIterator.IsAtEnd()) {
+      outputIterator.Set(0); // outside
+      if (maskIterator.Get() != 0) {
+        if (temperatureByMaterial.find(maskIterator.Get()) == temperatureByMaterial.end()) {
+          // this label does not have a fixed temperature, lets use it
+          // what is the quantile for this voxel?
+          for (int i = 0; i < quartiles.size(); i++) {
+            if (temperatureIterator.Get() > quartiles[i]) {
+              outputIterator.Set(i + 1); // start counting from 1
+              break;
+            }
+          }
+        }
+      }
+      ++temperatureIterator;
+      ++maskIterator;
+      ++outputIterator;
+    }
+
+    // export the quantized temperature field
+    typedef itk::ImageFileWriter<OutputImageType> WriterType;
+    WriterType::Pointer writer = WriterType::New();
+    // check if that directory exists, create before writing
+    writer->SetFileName(resultJSON["output_temperature_quantized"]);
+    writer->SetInput(outQuant);
+
+    std::cout << "Writing the temperature field as ";
+    std::cout << resultJSON["output_temperature_quantized"] << std::endl;
+
+    try {
+      writer->Update();
+    } catch (itk::ExceptionObject &ex) {
+      std::cout << ex << std::endl;
+      return EXIT_FAILURE;
+    }
   }
 
   std::ostringstream o;

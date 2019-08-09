@@ -4,6 +4,8 @@
 // would benefit from low-res initialization and upsampling
 // would benefit from multi-core
 
+// compute unit normal and unit bi-normal vector to the unit tangent vector
+
 #include "itkGradientImageFilter.h"
 #include "itkGradientRecursiveGaussianImageFilter.h"
 #include "itkImage.h"
@@ -113,19 +115,19 @@ int main(int argc, char *argv[]) {
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
-  command.SetDescription("Simulation of the heat equation. Use as in: ./HeatEquation -i 1000 wm.seg.nii /tmp/ -t 4 4 0 1 0.99");
+  command.SetDescription(
+      "Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -i 2000 wm.seg.nii /tmp/ -t 4 4 0 1 0.99. Specify the -t option at the end.");
   command.AddField("infile", "Input mask", MetaCommand::STRING, true);
   command.AddField("outdir", "Output mask directory", MetaCommand::STRING, true);
 
-  command.SetOption(
-      "Temperatures", "t", false,
-      "Specify the temperature for each label as <N> [<label value> <temperature>] such as in '-t 2 0 0.0 1 100.0 --'. Append the -- to make the end of "
-      "the temperatures! A label that is not specified will be "
-      "assumed to be variable and used for the computation.");
+  command.SetOption("Temperatures", "t", false,
+                    "Specify the temperature per label as <N> [<label value> <temperature>], with N the number of label and temperature values such as in '-t "
+                    "4 0 0.0 1 100.0'. A label that is not specified will be "
+                    "assumed to be variable and used for the computation.");
   command.SetOptionLongTag("Temperatures", "temperature-label-pairs");
   command.AddOptionField("Temperatures", "temperature", MetaCommand::LIST, true);
 
-  command.SetOption("Iterations", "i", false, "Specify the number of iterations (default 1) the code is run.");
+  command.SetOption("Iterations", "i", false, "Specify the number of iterations (default 1) the code is run. Suggested is a large number like 2000.");
   command.AddOptionField("Iterations", "iterations", MetaCommand::INT, true);
 
   // supersample the input (2 means 4 times more voxel)
@@ -133,8 +135,10 @@ int main(int argc, char *argv[]) {
   command.AddOptionField("SuperSample", "supersample", MetaCommand::INT, true);
 
   // quantize the output temperature
-  command.SetOption("Quantize", "q", false, "Quantize the output into N different regions.");
+  command.SetOption("Quantize", "q", false, "Quantize the output into N different regions of equal volume.");
   command.AddOptionField("Quantize", "quantize", MetaCommand::INT, true);
+
+  command.SetOption("UnitNormalVector", "n", false, "Export the unit normal vector and the unit binormal vector per voxel (gradient is the tangent vector)");
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -168,6 +172,11 @@ int main(int argc, char *argv[]) {
   int iterations = 1;
   if (command.GetOptionWasSet("Iterations"))
     iterations = command.GetValueAsInt("Iterations", "iterations");
+
+  // computed using finite differences and cross-product
+  bool unitNormal = false;
+  if (command.GetOptionWasSet("UnitNormalVector"))
+    unitNormal = true;
 
   std::map<int, float> temperatureByMaterial;
 
@@ -223,6 +232,18 @@ int main(int argc, char *argv[]) {
     output_filename2 = fn + "_gradient.nrrd";
   else
     output_filename2 = fn.substr(0, lastdot) + "_gradient.nrrd";
+
+  std::string output_filename3;
+  if (lastdot == std::string::npos)
+    output_filename3 = fn + "_gradient_normal.nrrd";
+  else
+    output_filename3 = fn.substr(0, lastdot) + "_gradient_normal.nrrd";
+
+  std::string output_filename4;
+  if (lastdot == std::string::npos)
+    output_filename4 = fn + "_gradient_binormal.nrrd";
+  else
+    output_filename4 = fn.substr(0, lastdot) + "_gradient_binormal.nrrd";
 
   resultJSON["output_temperature"] = outdir + "/" + output_filename;
   resultJSON["output_gradient"] = outdir + "/" + output_filename2;
@@ -457,6 +478,8 @@ int main(int argc, char *argv[]) {
       }
     }
     temperatureIterator.GoToBegin();
+    maskIterator.GoToBegin();
+    // itk::ImageRegionIterator<ImageType> maskIterator(inputVol, region);
     itk::ImageRegionIterator<OutputImageType> outputIterator(outQuant, region);
     while (!temperatureIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !outputIterator.IsAtEnd()) {
       outputIterator.Set(0); // outside
@@ -489,6 +512,176 @@ int main(int argc, char *argv[]) {
 
     try {
       writer->Update();
+    } catch (itk::ExceptionObject &ex) {
+      std::cout << ex << std::endl;
+      return EXIT_FAILURE;
+    }
+  }
+
+  // Unit Normal Vector calculation (and computation of the unit binormal)
+  if (unitNormal) {
+    resultJSON["output_gradient_normal"] = outdir + "/" + output_filename3;
+    resultJSON["output_gradient_binormal"] = outdir + "/" + output_filename4;
+
+    fprintf(stdout, "compute unit normal vector direction for each voxel using finite differences...\n");
+    // the tangent vector is in gimage, walk through the different voxel in x, y, z and compute finite differences
+    // GradientPixelType as location at each point
+    GradientImageType::Pointer outUN = GradientImageType::New();
+    outUN->SetRegions(region);
+    outUN->Allocate();
+    outUN->SetOrigin(inputVol->GetOrigin());
+    outUN->SetSpacing(inputVol->GetSpacing());
+    outUN->SetDirection(inputVol->GetDirection());
+
+    GradientImageType::Pointer outUBN = GradientImageType::New();
+    outUBN->SetRegions(region);
+    outUBN->Allocate();
+    outUBN->SetOrigin(inputVol->GetOrigin());
+    outUBN->SetSpacing(inputVol->GetSpacing());
+    outUBN->SetDirection(inputVol->GetDirection());
+
+    itk::ImageRegionIterator<GradientImageType> tangentIterator(gimage, region);
+    itk::ImageRegionIterator<GradientImageType> unIterator(outUN, region);
+    itk::ImageRegionIterator<GradientImageType> ubnIterator(outUBN, region);
+    itk::ImageRegionIterator<ImageType> maskIterator(inputVol, region);
+    using PointType = itk::Point<GradientPixelType, 3>;
+    using VectorType = itk::CovariantVector<double, 3>;
+    GradientImageType::IndexType pixelIndex;
+    using PointType = itk::Point<GradientPixelType, 3>;
+    ImageType::IndexType idxPoint1;
+    ImageType::IndexType idxPoint2;
+    double dsx = inputVol->GetSpacing()[0] * 2; // we move over the middle pixel so dT/ds
+    double dsy = inputVol->GetSpacing()[1] * 2;
+    double dsz = inputVol->GetSpacing()[2] * 2;
+    while (!tangentIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !unIterator.IsAtEnd() && !ubnIterator.IsAtEnd()) {
+      GradientPixelType p = tangentIterator.Get();
+      std::vector<float> vec;
+      ImageType::IndexType pixelIndex = tangentIterator.GetIndex();
+      VectorType point0 = gimage->GetPixel(pixelIndex); // pull the data at this pixel location
+      //
+      // x - direction
+      //
+      double ds = dsx;
+      if (pixelIndex[0] - 1 < 0) {
+        // substitute center pixel
+        idxPoint1 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
+        ds /= 2.0; // only half the distance
+      } else {
+        idxPoint1 = {{pixelIndex[0] - 1, pixelIndex[1], pixelIndex[2]}};
+      }
+      if (pixelIndex[0] + 1 >= dims[0]) {
+        // substitute center pixel
+        idxPoint2 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
+      } else {
+        idxPoint2 = {{pixelIndex[0] + 1, pixelIndex[1], pixelIndex[2]}};
+      }
+      // compute the magnitude of the difference at these locations
+      VectorType point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
+      VectorType point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
+      vec[0] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+               (point1[2] - point2[2]) * (point1[2] - point2[2]);
+      vec[0] /= ds;
+      //
+      // y - direction
+      //
+      ds = dsy;
+      if (pixelIndex[1] - 1 < 0) {
+        // substitute center pixel
+        idxPoint1 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
+        ds /= 2.0;
+      } else {
+        idxPoint1 = {{pixelIndex[0], pixelIndex[1] - 1, pixelIndex[2]}};
+      }
+      if (pixelIndex[1] + 1 >= dims[0]) {
+        // substitute center pixel
+        idxPoint2 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
+      } else {
+        idxPoint2 = {{pixelIndex[0], pixelIndex[1] + 1, pixelIndex[2]}};
+      }
+      // compute the magnitude of the difference at these locations
+      point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
+      point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
+      vec[1] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+               (point1[2] - point2[2]) * (point1[2] - point2[2]);
+      vec[1] /= ds;
+      //
+      // z - direction
+      //
+      ds = dsz;
+      if (pixelIndex[2] - 1 < 0) {
+        // substitute center pixel
+        idxPoint1 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
+        ds /= 2.0;
+      } else {
+        idxPoint1 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2] - 1}};
+      }
+      if (pixelIndex[2] + 1 >= dims[0]) {
+        // substitute center pixel
+        idxPoint2 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
+      } else {
+        idxPoint2 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2] + 1}};
+      }
+      // compute the magnitude of the difference at these locations
+      point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
+      point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
+      vec[2] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+               (point1[2] - point2[2]) * (point1[2] - point2[2]);
+      vec[2] /= ds;
+      // scale the result vector to length 1
+      double vec_size = sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+      if (vec_size > 0) {
+        vec[0] /= vec_size;
+        vec[1] /= vec_size;
+        vec[2] /= vec_size;
+      }
+      VectorType erg;
+      erg[0] = vec[0];
+      erg[1] = vec[1];
+      erg[2] = vec[2];
+      unIterator.Set(erg);
+
+      std::vector<double> vec2; // compute the binormal vector as the cross-product
+      vec2[0] = vec[1] * point0[2] - vec[2] * point0[1];
+      vec2[1] = vec[2] * point0[0] - vec[0] * point0[2];
+      vec2[2] = vec[0] * point0[1] - vec[1] * point0[0];
+
+      erg[0] = vec2[0];
+      erg[1] = vec2[1];
+      erg[2] = vec2[2];
+      ubnIterator.Set(erg);
+
+      ++unIterator;
+      ++ubnIterator;
+      ++tangentIterator;
+      ++maskIterator;
+    }
+
+    typedef itk::ImageFileWriter<GradientImageType> GradientWriterType;
+    GradientWriterType::Pointer writer3 = GradientWriterType::New();
+    // check if that directory exists, create before writing
+    writer3->SetFileName(resultJSON["output_gradient_normal"]);
+    writer3->SetInput(outUN);
+
+    std::cout << "Writing the unit normal of the gradient of the temperature field as ";
+    std::cout << resultJSON["output_gradient_normal"] << std::endl;
+
+    try {
+      writer3->Update();
+    } catch (itk::ExceptionObject &ex) {
+      std::cout << ex << std::endl;
+      return EXIT_FAILURE;
+    }
+
+    GradientWriterType::Pointer writer4 = GradientWriterType::New();
+    // check if that directory exists, create before writing
+    writer4->SetFileName(resultJSON["output_gradient_binormal"]);
+    writer4->SetInput(outUBN);
+
+    std::cout << "Writing the unit binormal of the gradient of the temperature field as ";
+    std::cout << resultJSON["output_gradient_binormal"] << std::endl;
+
+    try {
+      writer4->Update();
     } catch (itk::ExceptionObject &ex) {
       std::cout << ex << std::endl;
       return EXIT_FAILURE;

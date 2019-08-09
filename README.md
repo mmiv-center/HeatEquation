@@ -1,6 +1,9 @@
 # Create curvilinear coordinate systems for complex anatomy
 
-![screenshot](img/screenshot.png)
+<p align="center">
+   <img width="300" src="https://github.com/mmiv-center/HeatEquation/blob/master/img/screenshot.png?raw=true">
+   <img width="300" src="https://github.com/mmiv-center/HeatEquation/blob/master/img/snapshot_volume.png?raw=true">
+</p>
 
 This module creates curvilinear coordinates from volumetric label fields. It simulates the heat equation and exports the temperature potential field and the gradient of the potential field. The gradient field represents the directions of the geodesic lines for each volume element.
 

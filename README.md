@@ -16,3 +16,7 @@ In general the convergence of this code is very slow. Use plenty of iterations t
 The simulation could also be carried out by a propagating front algorithm. Those are faster converging but should produce similar results.
 
 The number of fixed temperature zones is adjustable. One can therefore specify several 'intermediate' regions with intermediate temperatures.
+
+## Output
+
+The output folder will contain several volumes after the computation is finished. There is a temperature field exported as a floating point nifti, a gradient field exported as an .nrrd volume and, if specified, a quantized label field (option -q).

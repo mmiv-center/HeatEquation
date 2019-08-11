@@ -1,8 +1,10 @@
-// example: ./HeatEquation -i 10 data/data_1wm_2ven_3gm.nii /tmp/ -t 4 3 0 2 100.99
+// example: ./HeatEquation -s 3 -q 3 -n -i 10 data/data_1wm_2ven_3gm.nii /tmp/ -t 4 3 0 2 100.99
 
-// requires lots of iterations >1000
-// would benefit from low-res initialization and upsampling
-// would benefit from multi-core
+// Requires lots of iterations >1000 until convergence
+// Would benefit from low-res initialization and successive upsampling strategy
+// Would benefit from multi-core/openMP/TBB
+// Would benefit from switch between single point floating and double resolution
+// Would benefit from implementation as an itk filter such as itk::GradientMagnitudeImageFilter
 
 // compute unit normal and unit bi-normal vector to the unit tangent vector
 
@@ -22,8 +24,10 @@
 using json = nlohmann::json;
 using namespace boost::filesystem;
 
+// save some stats in a result JSON file for provenance
 json resultJSON;
 
+// internal storage for the temperature field
 std::vector<float> output; // output buffer
 std::vector<float> tmpData;
 std::vector<int> data; // labels
@@ -46,8 +50,8 @@ typedef itk::GradientRecursiveGaussianImageFilter<OutputImageType, GradientImage
     GradientImageFilterType;
 typedef typename GradientImageFilterType::Pointer GradientImageFilterPointer;
 
-// perform one simulation step, assume that data ends up in data (uses tmpData as temp storage)
-void oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMaterial) {
+// perform one simulation step, assume that data ends up in output (uses tmpData as temp storage)
+double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMaterial) {
   float omega = 0.1;
   size_t count = 0;
   for (int k = 1; k < dims[2] - 1; k++) {
@@ -107,10 +111,22 @@ void oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMateria
       }
     }
   }
+  // calculate the (absolute) difference between the two fields - todo: use  as convergence criteria
+  double diff = 0.0;
+  size_t c = output.size()-1;
+  while(c >= 0) {
+    diff += fabs(output[c]-tmpData[c]);
+    if (c == 0) {
+      // underflow of c here!
+      break;
+    }
+    c = c - 1;
+  }
   // copy the tmpData to the output
   output = tmpData; // should copy the data after the iteration
   // memcpy(output->lattice.dataPtr(), tmpData.dataPtr(), dims[0] * dims[1] * dims[2] * 4); // float
   // copy
+  return diff;
 }
 
 int main(int argc, char *argv[]) {
@@ -120,7 +136,7 @@ int main(int argc, char *argv[]) {
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
   command.SetDescription(
-      "Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -i 2000 wm.seg.nii /tmp/ "
+      "Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -q 3 -i 2000 wm.seg.nii /tmp/ "
       "-t 4 4 0 1 0.99. Specify the -t option at the end.");
   command.AddField("infile", "Input mask in nifti or other file format understood by itk",
                    MetaCommand::STRING, true);
@@ -136,7 +152,8 @@ int main(int argc, char *argv[]) {
 
   command.SetOption("Iterations", "i", false,
                     "Specify the number of iterations (default 1) the code is run. Suggested is a "
-                    "large number like 2000.");
+                    "large number like 2000. See the output change value (sum of absolute differences), "
+                    "needs to reach 0 for full convergence.");
   command.AddOptionField("Iterations", "iterations", MetaCommand::INT, true);
 
   // supersample the input (2 means 4 times more voxel)
@@ -357,8 +374,9 @@ int main(int argc, char *argv[]) {
 
   // run the iterations
   for (int i = 0; i < iterations; i++) {
-    fprintf(stdout, "step: %d/%d\n", i + 1, iterations);
-    oneStep(dims, temperatureByMaterial);
+    fprintf(stdout, "step: %d/%d", i + 1, iterations);
+    double change = oneStep(dims, temperatureByMaterial);
+    fprintf(stdout, " change: %g\n", change);
   }
 
   // create the output object and save
@@ -486,14 +504,15 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < h_size; i++) {
       cum_hist[i] /= sum;
     }
-    std::vector<double> quartiles(quantize);
+    std::vector<double> quartiles(quantize - 1); // we got one less border than we have quantiles
     // now set the threshold temperature for each quartile range
-    for (int i = 0; i < quantize; i++) {
+    for (int i = 0; i < quantize - 1; i++) {
       // what is the first temperature where we reach the current quantile?
       double quant_step = (i + 1) * (1.0 / quantize); // lower border of quantile
       for (int j = 0; j < h_size; j++) {
         if (cum_hist[j] >= quant_step) {
-          quartiles[i] = (j / h_size) * (maxTemp - minTemp) + minTemp; // temperature at this index
+          quartiles[i] = ((float)j / (h_size - 1.0)) * (maxTemp - minTemp) +
+                         minTemp; // temperature at this index
           break;
         }
       }
@@ -514,12 +533,14 @@ int main(int argc, char *argv[]) {
         if (temperatureByMaterial.find(maskIterator.Get()) == temperatureByMaterial.end()) {
           // this label does not have a fixed temperature, lets use it
           // what is the quantile for this voxel?
+          int q = 1;
           for (int i = 0; i < quartiles.size(); i++) {
             if (temperatureIterator.Get() > quartiles[i]) {
-              outputIterator.Set(i + 1); // start counting from 1
+              q = i + 1; // start counting from 1
               break;
             }
           }
+          outputIterator.Set(q);
         }
       }
       ++temperatureIterator;

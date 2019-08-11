@@ -500,7 +500,7 @@ int main(int argc, char *argv[]) {
     }
     resultJSON["output_temperature_quantized thresholds"] = json::array();
     for (int i = 0; i < quartiles.size(); i++) {
-      resultJSON["output_temperature_quantized_thresholds"].push_back(quartiles[i]);
+      resultJSON["output_temperature_quantized thresholds"].push_back(quartiles[i]);
     }
 
     temperatureIterator.GoToBegin();

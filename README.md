@@ -42,6 +42,22 @@ The number of fixed temperature zones is adjustable. One can therefore specify s
 
 ## Output
 
+Given a call such as:
+```
+./HeatEquation -s 3 -n -i 10 -q 3 data/test.nii.gz data/output/ -t 4 1 -100 3 100
+```
+the resulting directory structure after the call is:
+```
+.
+├── output
+│   ├── test_gradient.nrrd
+│   ├── test_gradient_binormal.nrrd
+│   ├── test_gradient_normal.nrrd
+│   ├── test_temperature.nii
+│   └── test_temperature_quantized.nii
+└── test.nii.gz
+```
+
 The output folder will contain several volumes after the computation is finished. There is a temperature field exported as a floating point nifti file, a gradient field exported as an .nrrd volume and, if specified, a quantized label field (option -q) where each region has equal volume (indexed from low to high temperature).
 
 If the '-n' option is specified two more vector fields are exported. The gradient field vector is assumed as the tangent vector of a surface at each voxel. The normal unit vector perpendicular to the tangent vector as well as the unit binormal vector create a local frame of reference at each voxel location.

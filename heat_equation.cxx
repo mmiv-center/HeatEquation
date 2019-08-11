@@ -490,18 +490,19 @@ int main(int argc, char *argv[]) {
     // now set the threshold temperature for each quartile range
     for (int i = 0; i < quantize; i++) {
       // what is the first temperature where we reach the current quantile?
-      double quant_step = i * (1.0 / quantize); // lower border of quantile
+      double quant_step = (i + 1) * (1.0 / quantize); // lower border of quantile
       for (int j = 0; j < h_size; j++) {
-        if (cum_hist[j] > quant_step) {
+        if (cum_hist[j] >= quant_step) {
           quartiles[i] = (j / h_size) * (maxTemp - minTemp) + minTemp; // temperature at this index
           break;
         }
       }
     }
-    resultJSON["output_temperature_quantized thresholds"] = json::array();
+    json ar = json::array();
     for (int i = 0; i < quartiles.size(); i++) {
-      resultJSON["output_temperature_quantized thresholds"].push_back(quartiles[i]);
+      ar.push_back(quartiles[i]);
     }
+    resultJSON["output_temperature_quantized_thresholds"] = ar;
 
     temperatureIterator.GoToBegin();
     maskIterator.GoToBegin();
@@ -721,7 +722,7 @@ int main(int argc, char *argv[]) {
   }
 
   std::ostringstream o;
-  std::string si(output_filename);
+  std::string si(outdir + "/" + output_filename);
   si.erase(std::remove(si.begin(), si.end(), '\"'), si.end());
   lastdot = si.find_last_of(".");
   if (lastdot == std::string::npos)

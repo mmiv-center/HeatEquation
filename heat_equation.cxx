@@ -7,7 +7,6 @@
 // Would benefit from implementation as an itk filter such as itk::GradientMagnitudeImageFilter
 
 // compute unit normal and unit bi-normal vector to the unit tangent vector
-
 #include "itkGradientImageFilter.h"
 #include "itkGradientRecursiveGaussianImageFilter.h"
 #include "itkImage.h"
@@ -20,6 +19,10 @@
 #include "metaCommand.h"
 #include <boost/filesystem.hpp>
 #include <map>
+
+#define VERSION_MAJOR 0
+#define VERSION_MINOR 0
+#define VERSION_PATCH 10
 
 using json = nlohmann::json;
 using namespace boost::filesystem;
@@ -41,6 +44,7 @@ typedef itk::ImageFileReader<ImageType> ImageReaderType;
 
 using OutputPixelType = float;
 using OutputImageType = itk::Image<OutputPixelType, ImageDimension>;
+typedef itk::ImageFileReader<OutputImageType> OutputReaderType;
 
 typedef itk::CovariantVector<OutputPixelType, ImageDimension> GradientPixelType;
 typedef itk::Image<GradientPixelType, ImageDimension> GradientImageType;
@@ -130,14 +134,20 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
 }
 
 int main(int argc, char *argv[]) {
-
   itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(4);
+
+
+std::stringstream version_number;
+    version_number << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH;
+    const std::string VERSION_NO = version_number.str();
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
+  command.SetVersion(VERSION_NO.c_str());
   command.SetDescription(
       "Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -q 3 -i 2000 wm.seg.nii /tmp/ "
       "-t 4 4 0 1 0.99. Specify the -t option at the end.");
+  command.SetCategory("MRI");
   command.AddField("infile", "Input mask in nifti or other file format understood by itk",
                    MetaCommand::STRING, true);
   command.AddField("outdir", "Output directory", MetaCommand::STRING, true);
@@ -159,8 +169,8 @@ int main(int argc, char *argv[]) {
   // supersample the input (2 means 4 times more voxel)
   command.SetOption(
       "SuperSample", "s", false,
-      "Specify the number up-sampling steps using nearest neighboor interpolation (0).");
-  command.AddOptionField("SuperSample", "supersample", MetaCommand::INT, true);
+      "Specify the number up-sampling steps using nearest neighboor interpolation (0 or 1 have no effect, 2 doubles the resolution 0.5 half's the resolution).");
+  command.AddOptionField("SuperSample", "supersample", MetaCommand::FLOAT, true);
 
   // quantize the output temperature
   command.SetOption("Quantize", "q", false,
@@ -171,28 +181,35 @@ int main(int argc, char *argv[]) {
                     "Export the unit normal vector and the unit binormal vector per voxel "
                     "(exported gradient field is the tangent vector) in nrrd format.");
 
+  command.SetOption("InitField", "c", false,
+                    "Initialize the temperature field with this volume.");
+  command.AddOptionField("InitField", "initfield", MetaCommand::STRING, true);
+
   if (!command.Parse(argc, argv)) {
     return 1;
   }
 
   std::string input = command.GetValueAsString("infile");
   std::string outdir = command.GetValueAsString("outdir");
-  fprintf(stdout, "input: \"%s\"\n", input.c_str());
-  fprintf(stdout, "outdir: \"%s\"\n", outdir.c_str());
+  //fprintf(stdout, "input: \"%s\"\n", input.c_str());
+  //fprintf(stdout, "outdir: \"%s\"\n", outdir.c_str());
   if (!boost::filesystem::exists(input)) {
-    std::cout << "Could not find the input file..." << std::endl;
+    std::cout << "Could not find the input file " << input << "..." << std::endl;
     exit(1);
   }
 
-  int supersampling = 0;
-  if (command.GetOptionWasSet("SuperSample"))
-    supersampling = command.GetValueAsInt("SuperSample", "supersample");
-  if (supersampling > 10) {
-    fprintf(stdout, "Error: too much super-sampling...\n");
-    exit(0);
+  std::string initfield;
+  bool useInitField = false;
+  if (command.GetOptionWasSet("InitField")) {
+    initfield = command.GetValueAsString("InitField", "initfield");
+    useInitField = true;
   }
+
+  float supersampling = 0;
+  if (command.GetOptionWasSet("SuperSample"))
+    supersampling = command.GetValueAsFloat("SuperSample", "supersample");
   if (supersampling < 0) {
-    fprintf(stdout, "Error: don't know how to supersample that...\n");
+    fprintf(stdout, "Error: don't know how to supersample with negative values...\n");
     exit(-1);
   }
   int quantize = -1; // don't quantize
@@ -293,7 +310,8 @@ int main(int argc, char *argv[]) {
   ImageType::SizeType dims = region.GetSize();
   ImageType::PointType origin = inputVol->GetOrigin();
 
-  // do supersampling if required
+  // do supersampling if required - can be support sub-sampling as well? 
+  // that would make it easy to implement a staged computation across an image pyramid
   if (supersampling > 0) {
     resultJSON["SuperSamplingFactor"] = supersampling;
     using ResampleFilterType = itk::ResampleImageFilter<ImageType, ImageType>;
@@ -360,7 +378,62 @@ int main(int argc, char *argv[]) {
 
   // copy the data into the data and tmpData buffers
   output.resize(dims[0] * dims[1] * dims[2]); // the output temperature as float
-  std::fill(output.begin(), output.end(), 0.0);
+  if (useInitField) {
+    fprintf(stdout, "copy initial temperature values from init field using resampling...\n");
+      // regardless of the resolution of the input file we need to resample it to the output file (and copy to output)
+    OutputReaderType::Pointer initReader = OutputReaderType::New();
+    initReader->SetFileName(initfield);
+    initReader->Update();
+
+    // after supersampling inputVol has the resolution of the output we need
+    ImageType::SpacingType spacing = inputVol->GetSpacing();
+    ImageType::RegionType region = inputVol->GetLargestPossibleRegion();
+    ImageType::SizeType dims = region.GetSize();
+    ImageType::PointType origin = inputVol->GetOrigin();
+
+    using OutputResampleFilterType = itk::ResampleImageFilter<OutputImageType, OutputImageType>;
+
+    OutputResampleFilterType::Pointer resampler2 = OutputResampleFilterType::New();
+    using TransformType = itk::IdentityTransform<double, 3>;
+
+    // keep the same transformation as the input
+    TransformType::Pointer transform = TransformType::New();
+    transform->SetIdentity();
+
+    resampler2->SetTransform(transform);
+    using InterpolatorType = itk::LinearInterpolateImageFunction<OutputImageType, double>;
+    // using InterpolatorType = itk::NearestNeighborInterpolateImageFunction<ImageType, double>;
+
+    InterpolatorType::Pointer interpolator = InterpolatorType::New();
+    resampler2->SetInterpolator(interpolator);
+    resampler2->SetDefaultPixelValue(-10); // highlight regions without source
+
+    resampler2->SetOutputSpacing(spacing);
+    resampler2->SetOutputOrigin(inputVol->GetOrigin());
+    resampler2->SetOutputDirection(inputVol->GetDirection());
+
+    resampler2->SetSize(dims);
+    resampler2->SetInput(initReader->GetOutput());
+
+    resampler2->Update();
+    // now copy to data to the output array and use it during the iterations
+    OutputImageType::Pointer initVol = resampler2->GetOutput();
+    OutputImageType::RegionType initRegion = initVol->GetLargestPossibleRegion();
+    itk::ImageRegionIterator<OutputImageType> initIterator(initVol, initRegion);
+    // todo: we should make sure that the fixed temperature regions have the correct initial values
+    while (!initIterator.IsAtEnd()) {
+      OutputImageType::IndexType pixelIndex = initIterator.GetIndex();
+      size_t counter = toindex(pixelIndex[0], pixelIndex[1], pixelIndex[2]); // slow but correct
+      if (counter > 0 && counter < output.size() - 1) {
+        output[counter] = initIterator.Get();
+      }
+      ++initIterator;
+    }
+    // we should free the temporary resampled volume here again - hopefully that happens on its own after this block
+  } else {
+    std::fill(output.begin(), output.end(), 0.0);
+  }
+
   data.resize(dims[0] * dims[1] * dims[2]); // the labels as int
   itk::ImageRegionIterator<ImageType> volIterator(inputVol, region);
   size_t counter = 0;

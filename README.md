@@ -122,6 +122,17 @@ Together with the output fields the program also exports a json file which conta
 }
 ```
 
+## Multi-stage processing for speed improvement
+
+In order to speed up the convergence the program can be called in stages using super-samplings that increase over time. The low resolution steps can converge fast. They are used for the larger resolution steps as initial temperature fields. Here an example:
+```
+./HeatEquation -s 0.25 -i 5000 data/test.nii.gz data/output/ -t 4 1 1 3 2
+./HeatEquation -s 0.5 -i 2000 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
+./HeatEquation -s 1 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
+./HeatEquation -s 3 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
+```
+
+
 ## Build
 
 Have ITK installed and cmake (tested with itk 5.0.0, cmake 3.13) and:

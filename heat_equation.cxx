@@ -42,7 +42,8 @@ typedef itk::CovariantVector<OutputPixelType, ImageDimension> GradientPixelType;
 typedef itk::Image<GradientPixelType, ImageDimension> GradientImageType;
 typedef itk::SmartPointer<GradientImageType> GradientImagePointer;
 
-typedef itk::GradientRecursiveGaussianImageFilter<OutputImageType, GradientImageType> GradientImageFilterType;
+typedef itk::GradientRecursiveGaussianImageFilter<OutputImageType, GradientImageType>
+    GradientImageFilterType;
 typedef typename GradientImageFilterType::Pointer GradientImageFilterPointer;
 
 // perform one simulation step, assume that data ends up in data (uses tmpData as temp storage)
@@ -70,7 +71,8 @@ void oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMateria
           size_t ind110 = toindex(i, j, k - 1);
           size_t ind112 = toindex(i, j, k + 1);
           float result = 0.0f;
-          if (temperatureByMaterial.find(data[count]) != temperatureByMaterial.end()) { // if the temperature is set, do not change it
+          if (temperatureByMaterial.find(data[count]) !=
+              temperatureByMaterial.end()) { // if the temperature is set, do not change it
             result = temperatureByMaterial[data[count]];
           } else { // otherwise compute the new temperature by the stencil values
             float val111 = output[ind111];
@@ -94,7 +96,8 @@ void oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMateria
             if (data[ind112] == 0)
               val112 = val110;
 
-            result = (1.0 - 6.0 * omega) * val111 + omega * (val101 + val121 + val011 + val211 + val110 + val112);
+            result = (1.0 - 6.0 * omega) * val111 +
+                     omega * (val101 + val121 + val011 + val211 + val110 + val112);
             // fprintf(stdout, "label %d = %f\n", data[count], result);
           }
           tmpData[(size_t)count] = result;
@@ -106,7 +109,8 @@ void oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMateria
   }
   // copy the tmpData to the output
   output = tmpData; // should copy the data after the iteration
-  // memcpy(output->lattice.dataPtr(), tmpData.dataPtr(), dims[0] * dims[1] * dims[2] * 4); // float copy
+  // memcpy(output->lattice.dataPtr(), tmpData.dataPtr(), dims[0] * dims[1] * dims[2] * 4); // float
+  // copy
 }
 
 int main(int argc, char *argv[]) {
@@ -116,29 +120,39 @@ int main(int argc, char *argv[]) {
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
   command.SetDescription(
-      "Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -i 2000 wm.seg.nii /tmp/ -t 4 4 0 1 0.99. Specify the -t option at the end.");
-  command.AddField("infile", "Input mask", MetaCommand::STRING, true);
-  command.AddField("outdir", "Output mask directory", MetaCommand::STRING, true);
+      "Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -i 2000 wm.seg.nii /tmp/ "
+      "-t 4 4 0 1 0.99. Specify the -t option at the end.");
+  command.AddField("infile", "Input mask in nifti or other file format understood by itk",
+                   MetaCommand::STRING, true);
+  command.AddField("outdir", "Output directory", MetaCommand::STRING, true);
 
   command.SetOption("Temperatures", "t", false,
-                    "Specify the temperature per label as <N> [<label value> <temperature>], with N the number of label and temperature values such as in '-t "
+                    "Specify the temperature per label as <N> [<label value> <temperature>], with "
+                    "N the number of label and temperature values such as in '-t "
                     "4 0 0.0 1 100.0'. A label that is not specified will be "
                     "assumed to be variable and used for the computation.");
   command.SetOptionLongTag("Temperatures", "temperature-label-pairs");
   command.AddOptionField("Temperatures", "temperature", MetaCommand::LIST, true);
 
-  command.SetOption("Iterations", "i", false, "Specify the number of iterations (default 1) the code is run. Suggested is a large number like 2000.");
+  command.SetOption("Iterations", "i", false,
+                    "Specify the number of iterations (default 1) the code is run. Suggested is a "
+                    "large number like 2000.");
   command.AddOptionField("Iterations", "iterations", MetaCommand::INT, true);
 
   // supersample the input (2 means 4 times more voxel)
-  command.SetOption("SuperSample", "s", false, "Specify the number up-sampling steps using nearest neighboor interpolation (0).");
+  command.SetOption(
+      "SuperSample", "s", false,
+      "Specify the number up-sampling steps using nearest neighboor interpolation (0).");
   command.AddOptionField("SuperSample", "supersample", MetaCommand::INT, true);
 
   // quantize the output temperature
-  command.SetOption("Quantize", "q", false, "Quantize the output into N different regions of equal volume.");
+  command.SetOption("Quantize", "q", false,
+                    "Quantize the output into N different regions of equal volume.");
   command.AddOptionField("Quantize", "quantize", MetaCommand::INT, true);
 
-  command.SetOption("UnitNormalVector", "n", false, "Export the unit normal vector and the unit binormal vector per voxel (gradient is the tangent vector)");
+  command.SetOption("UnitNormalVector", "n", false,
+                    "Export the unit normal vector and the unit binormal vector per voxel "
+                    "(exported gradient field is the tangent vector) in nrrd format.");
 
   if (!command.Parse(argc, argv)) {
     return 1;
@@ -168,7 +182,8 @@ int main(int argc, char *argv[]) {
   if (command.GetOptionWasSet("Quantize"))
     quantize = command.GetValueAsInt("Quantize", "quantize");
 
-  // todo: instead of number of iterations it would be good to have convergence error (might require double computations)
+  // todo: instead of number of iterations it would be good to have convergence error (might require
+  // double computations)
   int iterations = 1;
   if (command.GetOptionWasSet("Iterations"))
     iterations = command.GetValueAsInt("Iterations", "iterations");
@@ -188,7 +203,10 @@ int main(int argc, char *argv[]) {
     std::list<std::string> thresholds = command.GetValueAsList("Temperatures");
     std::list<std::string>::iterator it;
     if (thresholds.size() % 2 != 0) {
-      fprintf(stdout, "Error: should be an even number of threshold values and temperatures but found %lu entries.\n", thresholds.size());
+      fprintf(stdout,
+              "Error: should be an even number of threshold values and temperatures but found %lu "
+              "entries.\n",
+              thresholds.size());
       exit(-1);
     }
     // fprintf(stdout, "found %lu temperature arguments\n", thresholds.size());
@@ -523,9 +541,10 @@ int main(int argc, char *argv[]) {
     resultJSON["output_gradient_normal"] = outdir + "/" + output_filename3;
     resultJSON["output_gradient_binormal"] = outdir + "/" + output_filename4;
 
-    fprintf(stdout, "compute unit normal vector direction for each voxel using finite differences...\n");
-    // the tangent vector is in gimage, walk through the different voxel in x, y, z and compute finite differences
-    // GradientPixelType as location at each point
+    fprintf(stdout,
+            "compute unit normal vector direction for each voxel using finite differences...\n");
+    // the tangent vector is in gimage, walk through the different voxel in x, y, z and compute
+    // finite differences GradientPixelType as location at each point
     GradientImageType::Pointer outUN = GradientImageType::New();
     outUN->SetRegions(region);
     outUN->Allocate();
@@ -553,7 +572,8 @@ int main(int argc, char *argv[]) {
     double dsx = inputVol->GetSpacing()[0] * 2; // we move over the middle pixel so dT/ds
     double dsy = inputVol->GetSpacing()[1] * 2;
     double dsz = inputVol->GetSpacing()[2] * 2;
-    while (!tangentIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !unIterator.IsAtEnd() && !ubnIterator.IsAtEnd()) {
+    while (!tangentIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !unIterator.IsAtEnd() &&
+           !ubnIterator.IsAtEnd()) {
       GradientPixelType p = tangentIterator.Get();
       std::vector<float> vec;
       ImageType::IndexType pixelIndex = tangentIterator.GetIndex();
@@ -578,7 +598,8 @@ int main(int argc, char *argv[]) {
       // compute the magnitude of the difference at these locations
       VectorType point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
       VectorType point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
-      vec[0] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+      vec[0] = (point1[0] - point2[0]) * (point1[0] - point2[0]) +
+               (point1[1] - point2[1]) * (point1[1] - point2[1]) +
                (point1[2] - point2[2]) * (point1[2] - point2[2]);
       vec[0] /= ds;
       //
@@ -601,7 +622,8 @@ int main(int argc, char *argv[]) {
       // compute the magnitude of the difference at these locations
       point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
       point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
-      vec[1] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+      vec[1] = (point1[0] - point2[0]) * (point1[0] - point2[0]) +
+               (point1[1] - point2[1]) * (point1[1] - point2[1]) +
                (point1[2] - point2[2]) * (point1[2] - point2[2]);
       vec[1] /= ds;
       //
@@ -624,7 +646,8 @@ int main(int argc, char *argv[]) {
       // compute the magnitude of the difference at these locations
       point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
       point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
-      vec[2] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+      vec[2] = (point1[0] - point2[0]) * (point1[0] - point2[0]) +
+               (point1[1] - point2[1]) * (point1[1] - point2[1]) +
                (point1[2] - point2[2]) * (point1[2] - point2[2]);
       vec[2] /= ds;
       // scale the result vector to length 1

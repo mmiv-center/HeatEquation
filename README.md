@@ -44,7 +44,7 @@ The number of fixed temperature zones is adjustable. One can therefore specify s
 
 Given a call such as:
 ```
-./HeatEquation -s 3 -n -i 10 -q 3 data/test.nii.gz data/output/ -t 4 1 -100 3 100
+./HeatEquation -s 3 -n -i 10 -q 3 data/test.nii data/output/ -t 4 1 -100 3 100
 ```
 the resulting directory structure after the call is:
 ```
@@ -53,9 +53,10 @@ the resulting directory structure after the call is:
 │   ├── test_gradient.nrrd
 │   ├── test_gradient_binormal.nrrd
 │   ├── test_gradient_normal.nrrd
+│   ├── test_temperature.json
 │   ├── test_temperature.nii
 │   └── test_temperature_quantized.nii
-└── test.nii.gz
+└── test.nii
 ```
 
 The output folder will contain several volumes after the computation is finished. There is a temperature field exported as a floating point nifti file, a gradient field exported as an .nrrd volume and, if specified, a quantized label field (option -q) where each region has equal volume (indexed from low to high temperature).
@@ -126,7 +127,7 @@ In order to speed up the convergence the program can be called in multi-resoluti
 ./HeatEquation -s 0.25 -i 5000 data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 0.5 -i 2000 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 1 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
-./HeatEquation -s 3 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
+./HeatEquation -s 3 -i 500 -c data/output/test.nii_temperature.nii -n data/test.nii.gz data/output/ -t 4 1 1 3 2
 ```
 
 ## Build

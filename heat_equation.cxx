@@ -401,6 +401,7 @@ std::stringstream version_number;
     transform->SetIdentity();
 
     resampler2->SetTransform(transform);
+    // we should use a better  interpolator here (cubic)
     using InterpolatorType = itk::LinearInterpolateImageFunction<OutputImageType, double>;
     // using InterpolatorType = itk::NearestNeighborInterpolateImageFunction<ImageType, double>;
 
@@ -607,9 +608,9 @@ std::stringstream version_number;
           // this label does not have a fixed temperature, lets use it
           // what is the quantile for this voxel?
           int q = 1;
-          for (int i = 0; i < quartiles.size(); i++) {
+          for (int i = quartiles.size()-1; i >= 0; i--) {
             if (temperatureIterator.Get() > quartiles[i]) {
-              q = i + 1; // start counting from 1
+              q = i + 2; // start counting from 1
               break;
             }
           }

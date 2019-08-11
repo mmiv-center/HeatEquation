@@ -121,14 +121,13 @@ Together with the output fields the program also exports a json file which conta
 
 ## Multi-stage processing for speed improvement
 
-In order to speed up the convergence the program can be called in multi-resolution stages. The low resolution steps can converge fast and are used for the larger resolution steps as initial temperature fields. Here an example:
+In order to speed up the convergence the program can be called in multi-resolution stages. The low resolution steps converge fast and are used for the larger resolution steps as initial temperature fields. Here an example that first calculates the temperature field at a quarter of the original resolution. The following steps use the previous temperature field as initialization until a field is reached that has 3 times the resolution of the input field.
 ```
 ./HeatEquation -s 0.25 -i 5000 data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 0.5 -i 2000 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 1 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 3 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
 ```
-where the '-c' option is used to specify the initial temperature field. 
 
 ## Build
 

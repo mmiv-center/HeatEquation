@@ -75,48 +75,45 @@ Together with the output fields the program also exports a json file which conta
         0.5228762626647949,
         0.5279547373453776
     ],
-    "SuperSamplingFactor": 3,
+    "SuperSamplingFactor": 3.0,
     "command_line": [
         "./HeatEquation",
         "-s",
         "3",
-        "-n",
         "-i",
-        "10",
+        "5",
         "-q",
         "3",
-        "data/test.nii",
+        "-c",
+        "data/output/test.nii_temperature.nii",
+        "data/test.nii.gz",
         "data/output/",
         "-t",
         "4",
         "1",
-        "-100",
+        "1",
         "3",
-        "100"
+        "2"
     ],
-    "output_gradient": "data/output//test_gradient.nrrd",
-    "output_gradient_binormal": "data/output//test_gradient_binormal.nrrd",
-    "output_gradient_normal": "data/output//test_gradient_normal.nrrd",
-    "output_temperature": "data/output//test_temperature.nii",
-    "output_temperature_quantized": "data/output//test_temperature_quantized.nii",
-    "output_temperature_quantized thresholds": [],
+    "output_gradient": "data/output//test.nii_gradient.nrrd",
+    "output_temperature": "data/output//test.nii_temperature.nii",
+    "output_temperature_quantized": "data/output//test.nii_temperature_quantized.nii",
     "output_temperature_quantized_thresholds": [
-        -100.0,
-        -100.0,
-        -100.0
+        1.2814070351758793,
+        1.5326633165829144
     ],
     "temperature_range_specified": [
-        -100.0,
-        100.0
+        1.0,
+        2.0
     ],
     "temperatures": [
         {
             "label": 1,
-            "temperature": -100.0
+            "temperature": 1.0
         },
         {
             "label": 3,
-            "temperature": 100.0
+            "temperature": 2.0
         }
     ]
 }
@@ -124,14 +121,14 @@ Together with the output fields the program also exports a json file which conta
 
 ## Multi-stage processing for speed improvement
 
-In order to speed up the convergence the program can be called in stages using super-samplings that increase over time. The low resolution steps can converge fast. They are used for the larger resolution steps as initial temperature fields. Here an example:
+In order to speed up the convergence the program can be called in multi-resolution stages. The low resolution steps can converge fast and are used for the larger resolution steps as initial temperature fields. Here an example:
 ```
 ./HeatEquation -s 0.25 -i 5000 data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 0.5 -i 2000 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 1 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
 ./HeatEquation -s 3 -i 500 -c data/output/test.nii_temperature.nii data/test.nii.gz data/output/ -t 4 1 1 3 2
 ```
-
+where the '-c' option is used to specify the initial temperature field. 
 
 ## Build
 

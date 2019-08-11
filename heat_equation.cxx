@@ -404,7 +404,7 @@ int main(int argc, char *argv[]) {
   typedef itk::ImageFileWriter<GradientImageType> GradientWriterType;
   GradientWriterType::Pointer writer2 = GradientWriterType::New();
   // check if that directory exists, create before writing
-  writer2->SetFileName(resultJSON["output_gradient"]);
+  writer2->SetFileName(resultJSON["output_gradient"]); // this is the tangent unit vector
   writer2->SetInput(gimage);
 
   std::cout << "Writing the gradient of the temperature field as ";
@@ -450,6 +450,9 @@ int main(int argc, char *argv[]) {
       if (mit->second < minTemp)
         minTemp = mit->second;
     }
+    resultJSON["temperature_range_specified"] = json::array();
+    resultJSON["temperature_range_specified"].push_back(minTemp);
+    resultJSON["temperature_range_specified"].push_back(maxTemp);
 
     itk::ImageRegionIterator<OutputImageType> temperatureIterator(outVol, region);
     itk::ImageRegionIterator<ImageType> maskIterator(inputVol, region);
@@ -495,6 +498,11 @@ int main(int argc, char *argv[]) {
         }
       }
     }
+    resultJSON["output_temperature_quantized thresholds"] = json::array();
+    for (int i = 0; i < quartiles.size(); i++) {
+      resultJSON["output_temperature_quantized_thresholds"].push_back(quartiles[i]);
+    }
+
     temperatureIterator.GoToBegin();
     maskIterator.GoToBegin();
     // itk::ImageRegionIterator<ImageType> maskIterator(inputVol, region);
@@ -575,7 +583,7 @@ int main(int argc, char *argv[]) {
     while (!tangentIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !unIterator.IsAtEnd() &&
            !ubnIterator.IsAtEnd()) {
       GradientPixelType p = tangentIterator.Get();
-      std::vector<float> vec;
+      std::vector<float> vec(3);
       ImageType::IndexType pixelIndex = tangentIterator.GetIndex();
       VectorType point0 = gimage->GetPixel(pixelIndex); // pull the data at this pixel location
       //
@@ -613,7 +621,7 @@ int main(int argc, char *argv[]) {
       } else {
         idxPoint1 = {{pixelIndex[0], pixelIndex[1] - 1, pixelIndex[2]}};
       }
-      if (pixelIndex[1] + 1 >= dims[0]) {
+      if (pixelIndex[1] + 1 >= dims[1]) {
         // substitute center pixel
         idxPoint2 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
       } else {
@@ -637,7 +645,7 @@ int main(int argc, char *argv[]) {
       } else {
         idxPoint1 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2] - 1}};
       }
-      if (pixelIndex[2] + 1 >= dims[0]) {
+      if (pixelIndex[2] + 1 >= dims[2]) {
         // substitute center pixel
         idxPoint2 = {{pixelIndex[0], pixelIndex[1], pixelIndex[2]}};
       } else {
@@ -650,6 +658,7 @@ int main(int argc, char *argv[]) {
                (point1[1] - point2[1]) * (point1[1] - point2[1]) +
                (point1[2] - point2[2]) * (point1[2] - point2[2]);
       vec[2] /= ds;
+      // fprintf(stdout, "%f %f %f\n", vec[0], vec[1], vec[2]);
       // scale the result vector to length 1
       double vec_size = sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
       if (vec_size > 0) {
@@ -663,7 +672,7 @@ int main(int argc, char *argv[]) {
       erg[2] = vec[2];
       unIterator.Set(erg);
 
-      std::vector<double> vec2; // compute the binormal vector as the cross-product
+      std::vector<double> vec2(3); // compute the binormal vector as the cross-product
       vec2[0] = vec[1] * point0[2] - vec[2] * point0[1];
       vec2[1] = vec[2] * point0[0] - vec[0] * point0[2];
       vec2[2] = vec[0] * point0[1] - vec[1] * point0[0];

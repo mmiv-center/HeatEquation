@@ -134,4 +134,5 @@ to get the executable.
 Alternatively use the provided docker file to build itk and the module:
 ```
 docker build  -t HeatEquation -f Dockerfile .
+docker run --rm -it HeatEquation -h
 ```

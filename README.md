@@ -45,3 +45,77 @@ The number of fixed temperature zones is adjustable. One can therefore specify s
 The output folder will contain several volumes after the computation is finished. There is a temperature field exported as a floating point nifti file, a gradient field exported as an .nrrd volume and, if specified, a quantized label field (option -q) where each region has equal volume (indexed from low to high temperature).
 
 If the '-n' option is specified two more vector fields are exported. The gradient field vector is assumed as the tangent vector of a surface at each voxel. The normal unit vector perpendicular to the tangent vector as well as the unit binormal vector create a local frame of reference at each voxel location.
+
+Together with the output fields the program also exports a json file which contains some statistics about the run for provenance:
+```
+{
+    "OutputSize": [
+        384,
+        384,
+        261
+    ],
+    "OutputSpacing": [
+        0.5228762626647949,
+        0.5228762626647949,
+        0.5279547373453776
+    ],
+    "SuperSamplingFactor": 3,
+    "command_line": [
+        "./HeatEquation",
+        "-s",
+        "3",
+        "-n",
+        "-i",
+        "10",
+        "-q",
+        "3",
+        "data/test.nii",
+        "data/output/",
+        "-t",
+        "4",
+        "1",
+        "-100",
+        "3",
+        "100"
+    ],
+    "output_gradient": "data/output//test_gradient.nrrd",
+    "output_gradient_binormal": "data/output//test_gradient_binormal.nrrd",
+    "output_gradient_normal": "data/output//test_gradient_normal.nrrd",
+    "output_temperature": "data/output//test_temperature.nii",
+    "output_temperature_quantized": "data/output//test_temperature_quantized.nii",
+    "output_temperature_quantized thresholds": [],
+    "output_temperature_quantized_thresholds": [
+        -100.0,
+        -100.0,
+        -100.0
+    ],
+    "temperature_range_specified": [
+        -100.0,
+        100.0
+    ],
+    "temperatures": [
+        {
+            "label": 1,
+            "temperature": -100.0
+        },
+        {
+            "label": 3,
+            "temperature": 100.0
+        }
+    ]
+}
+```
+
+## Build
+
+Have ITK installed and cmake (tested with itk 5.0.0, cmake 3.13) and:
+```
+cmake .
+make
+```
+to get the executable.
+
+Alternatively use the provided docker file to build itk and the module:
+```
+docker build  -t HeatEquation -f Dockerfile .
+```

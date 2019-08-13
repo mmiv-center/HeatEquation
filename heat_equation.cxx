@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
   command.SetOptionLongTag("Temperatures", "temperature-label-pairs");
   command.AddOptionField("Temperatures", "temperature", MetaCommand::LIST, true);
 
-  command.SetOption("Iterations", "i", false, "Specify the number of iterations (default 1) the code is run. Suggested is a large number like 2000.");
+  command.SetOption("Iterations", "i", false, "Specify the number of iterations (default 1) the code is run. Suggested is to use a large number like 2000.");
   command.AddOptionField("Iterations", "iterations", MetaCommand::INT, true);
 
   // supersample the input (2 means 4 times more voxel)

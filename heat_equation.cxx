@@ -7,6 +7,9 @@
 // Would benefit from implementation as an itk filter such as itk::GradientMagnitudeImageFilter
 
 // compute unit normal and unit bi-normal vector to the unit tangent vector
+
+// see http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.136.6443&rep=rep1&type=pdf
+// see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3068613/
 #include "itkGradientImageFilter.h"
 #include "itkGradientRecursiveGaussianImageFilter.h"
 #include "itkImage.h"

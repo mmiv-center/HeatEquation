@@ -144,3 +144,11 @@ Alternatively use the provided docker file to build itk and the module:
 docker build  -t HeatEquation -f Dockerfile .
 docker run --rm -it HeatEquation -h
 ```
+
+## Todo
+
+As we can now measure distances in space we could measure the distances between every pair of regions of interest. This would result in an explosion of potential fields but those could be managed using a lower number of weighted basis sets (PCA, but wavelets have local support). It would be interesting to compare those directions (tangent unit vectors of the potential field) with actual fiber tracts in the brain as calculated from DTI. For some pairs of regions this could fit well, for other it might not - which onces? Using all the different tangent fields we would be able to recover an upper bounds on the number of crossing fibers in the brain (given a fixed number of regions of interest).
+
+This model assumes an infinite load of the fibers per voxel, or at least a load that grows with the cube of the number of regions of interest. What if the fiber bundle density of a voxel is limited? In that world the potential fields would have to interact. A voxel would have to hinder the distribution of heat as its load increases. The load would be the proportion of tangent fields in its volume occupied given all the region to region connections.
+
+A reason for such a load could be that support cells can only keep a given number of axons happy per volume element (thickness of the myelin sheet). Upper bound might be in the corpus callosum. Question, what is the fiber density as measured by histology in the different regions of the white matter?

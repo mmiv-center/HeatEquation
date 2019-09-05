@@ -152,3 +152,6 @@ As we can now measure distances in space we could measure the distances between 
 This model assumes an infinite load of the fibers per voxel, or at least a load that grows with the cube of the number of regions of interest. What if the fiber bundle density of a voxel is limited? In that world the potential fields would have to interact. A voxel would have to hinder the distribution of heat as its load increases. The load would be the proportion of tangent fields in its volume occupied given all the region to region connections.
 
 A reason for such a load could be that support cells can only keep a given number of axons happy per volume element (thickness of the myelin sheet). Upper bound might be in the corpus callosum. Question, what is the fiber density as measured by histology in the different regions of the white matter?
+
+We can add a sparsness constrain on the potential field per pair-wise connection. Most of the time the gradient of the potential field should be 0. This would emulate a preference for tight tracks. It would be good to know if this is really required.
+

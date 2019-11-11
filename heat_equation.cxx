@@ -11,6 +11,7 @@
 // see http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.136.6443&rep=rep1&type=pdf
 // see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3068613/
 #include "itkGradientImageFilter.h"
+#include "itkGradientMagnitudeImageFilter.h"
 #include "itkGradientRecursiveGaussianImageFilter.h"
 #include "itkImage.h"
 #include "itkImageFileReader.h"
@@ -53,39 +54,57 @@ typedef itk::CovariantVector<OutputPixelType, ImageDimension> GradientPixelType;
 typedef itk::Image<GradientPixelType, ImageDimension> GradientImageType;
 typedef itk::SmartPointer<GradientImageType> GradientImagePointer;
 
-typedef itk::GradientRecursiveGaussianImageFilter<OutputImageType, GradientImageType>
-    GradientImageFilterType;
+typedef itk::GradientRecursiveGaussianImageFilter<OutputImageType, GradientImageType> GradientImageFilterType;
 typedef typename GradientImageFilterType::Pointer GradientImageFilterPointer;
+typedef itk::GradientMagnitudeImageFilter<OutputImageType, OutputImageType> GradientMagnitudeImageFilterType;
+typedef typename GradientMagnitudeImageFilterType::Pointer GradientMagnitudeImageFilterPointer;
+
+// compute the magnitude of the gradient field
+OutputImageType::Pointer computeMagGradField(OutputImageType::Pointer input) {
+  // compute the gradient field
+  GradientMagnitudeImageFilterPointer gmfilter = GradientMagnitudeImageFilterType::New();
+  gmfilter->SetInput(input);
+  // gmfilter->SetSigma(1.0f);
+  gmfilter->Update();
+  OutputImageType::Pointer gmimage = gmfilter->GetOutput();
+  return gmimage;
+
+  // We know what the max and min values for the gradient magnitude are. They are defined
+  // by the temperature values we have set in the input.
+}
 
 // perform one simulation step, assume that data ends up in output (uses tmpData as temp storage)
 double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMaterial) {
   float omega = 0.1;
   size_t count = 0;
+  bool zeroSpecified = false;
+  if (temperatureByMaterial.find(0) != temperatureByMaterial.end()) {
+    zeroSpecified = true;
+  }
   for (int k = 1; k < dims[2] - 1; k++) {
     for (int j = 1; j < dims[1] - 1; j++) {
       for (int i = 1; i < dims[0] - 1; i++) {
         // ok what tissue type is this cell?
         // we only care for either being Exterior or something else
         count = toindex(i, j, k);
-        if (data[count] != 0) { // do something (not exterior)
+        if (data[count] != 0 && zeroSpecified) { // do something (not exterior)
           // what are the values at the stencil around the current location?
           //  001  (101)  201
           // (011) (111) (211)
           //  021  (121)  221
           // and one above and one below that
           // 110, 112
-          size_t ind111 = count;
-          size_t ind101 = toindex(i, j - 1, k);
-          size_t ind121 = toindex(i, j + 1, k);
-          size_t ind011 = toindex(i - 1, j, k);
-          size_t ind211 = toindex(i + 1, j, k);
-          size_t ind110 = toindex(i, j, k - 1);
-          size_t ind112 = toindex(i, j, k + 1);
           float result = 0.0f;
-          if (temperatureByMaterial.find(data[count]) !=
-              temperatureByMaterial.end()) { // if the temperature is set, do not change it
+          if (temperatureByMaterial.find(data[count]) != temperatureByMaterial.end()) { // if the temperature is set, do not change it
             result = temperatureByMaterial[data[count]];
           } else { // otherwise compute the new temperature by the stencil values
+            size_t ind111 = count;
+            size_t ind101 = toindex(i, j - 1, k);
+            size_t ind121 = toindex(i, j + 1, k);
+            size_t ind011 = toindex(i - 1, j, k);
+            size_t ind211 = toindex(i + 1, j, k);
+            size_t ind110 = toindex(i, j, k - 1);
+            size_t ind112 = toindex(i, j, k + 1);
             float val111 = output[ind111];
             float val101 = output[ind101];
             float val121 = output[ind121];
@@ -107,8 +126,7 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
             if (data[ind112] == 0)
               val112 = val110;
 
-            result = (1.0 - 6.0 * omega) * val111 +
-                     omega * (val101 + val121 + val011 + val211 + val110 + val112);
+            result = (1.0 - 6.0 * omega) * val111 + omega * (val101 + val121 + val011 + val211 + val110 + val112);
             // fprintf(stdout, "label %d = %f\n", data[count], result);
           }
           tmpData[(size_t)count] = result;
@@ -120,9 +138,9 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
   }
   // calculate the (absolute) difference between the two fields - todo: use  as convergence criteria
   double diff = 0.0;
-  size_t c = output.size()-1;
-  while(c >= 0) {
-    diff += fabs(output[c]-tmpData[c]);
+  size_t c = output.size() - 1;
+  while (c >= 0) {
+    diff += fabs(output[c] - tmpData[c]);
     if (c == 0) {
       // underflow of c here!
       break;
@@ -139,54 +157,52 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
 int main(int argc, char *argv[]) {
   itk::MultiThreaderBase::SetGlobalMaximumNumberOfThreads(4);
 
-
-std::stringstream version_number;
-    version_number << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH;
-    const std::string VERSION_NO = version_number.str();
+  std::stringstream version_number;
+  version_number << VERSION_MAJOR << "." << VERSION_MINOR << "." << VERSION_PATCH;
+  const std::string VERSION_NO = version_number.str();
 
   MetaCommand command;
   command.SetAuthor("Hauke Bartsch");
   command.SetVersion(VERSION_NO.c_str());
-  command.SetDescription(
-      "Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -q 3 -i 2000 wm.seg.nii /tmp/ "
-      "-t 4 4 0 1 0.99. Specify the -t option at the end.");
+  command.SetDescription("Simulation of the heat equation. Use as in: ./HeatEquation -s 2 -n -q 3 -i 2000 wm.seg.nii /tmp/ "
+                         "-t 4 4 0 1 0.99. Specify the -t option at the end.");
   command.SetCategory("MRI");
-  command.AddField("infile", "Input mask in nifti or other file format understood by itk",
-                   MetaCommand::STRING, true);
+  command.AddField("infile", "Input mask in nifti or other file format understood by itk", MetaCommand::STRING, true);
   command.AddField("outdir", "Output directory", MetaCommand::STRING, true);
 
   command.SetOption("Temperatures", "t", false,
                     "Specify the temperature per label as <N> [<label value> <temperature>], with "
                     "N the number of label and temperature values such as in '-t "
                     "4 0 0.0 1 100.0'. A label that is not specified will be "
-                    "assumed to be variable and used for the computation.");
+                    "assumed to be variable and used for the computation (if not label 0).");
   command.SetOptionLongTag("Temperatures", "temperature-label-pairs");
   command.AddOptionField("Temperatures", "temperature", MetaCommand::LIST, true);
 
   command.SetOption("Iterations", "i", false,
                     "Specify the number of iterations (default 1) the code is run. Suggested is to use a "
                     "large number of iterations like 2000 (see section about speed up). Convergence can be "
-		    "monitored using the change value printed for each iteration (sum of absolute differences).");
+                    "monitored using the change value printed for each iteration (sum of absolute differences).");
 
   command.AddOptionField("Iterations", "iterations", MetaCommand::INT, true);
 
   // supersample the input (2 means 4 times more voxel)
-  command.SetOption(
-      "SuperSample", "s", false,
-      "Specify the number up-sampling steps using nearest neighboor interpolation (0 or 1 have no effect, 2 doubles the resolution 0.5 half's the resolution).");
+  command.SetOption("SuperSample", "s", false,
+                    "Specify the number up-sampling steps using nearest neighboor interpolation (0 or 1 have no effect, 2 doubles the resolution 0.5 half's "
+                    "the resolution).");
   command.AddOptionField("SuperSample", "supersample", MetaCommand::FLOAT, true);
 
   // quantize the output temperature
-  command.SetOption("Quantize", "q", false,
-                    "Quantize the output into N different regions of equal volume.");
+  command.SetOption("Quantize", "q", false, "Quantize the output into N different regions of equal volume.");
   command.AddOptionField("Quantize", "quantize", MetaCommand::INT, true);
 
   command.SetOption("UnitNormalVector", "n", false,
                     "Export the unit normal vector and the unit binormal vector per voxel "
                     "(exported gradient field is the tangent vector) in nrrd format.");
 
-  command.SetOption("InitField", "c", false,
-                    "Initialize the temperature field with this volume.");
+  command.SetOption(
+      "InitField", "c", false,
+      "Initialize the temperature field with this volume. This option together with the super sample option can be used to speed up convergence if a sequence "
+      "of small to large volumes is created where each stage is initialized with the temperature field calculated from the previous stage.");
   command.AddOptionField("InitField", "initfield", MetaCommand::STRING, true);
 
   if (!command.Parse(argc, argv)) {
@@ -195,8 +211,8 @@ std::stringstream version_number;
 
   std::string input = command.GetValueAsString("infile");
   std::string outdir = command.GetValueAsString("outdir");
-  //fprintf(stdout, "input: \"%s\"\n", input.c_str());
-  //fprintf(stdout, "outdir: \"%s\"\n", outdir.c_str());
+  // fprintf(stdout, "input: \"%s\"\n", input.c_str());
+  // fprintf(stdout, "outdir: \"%s\"\n", outdir.c_str());
   if (!boost::filesystem::exists(input)) {
     std::cout << "Could not find the input file " << input << "..." << std::endl;
     exit(1);
@@ -314,7 +330,7 @@ std::stringstream version_number;
   ImageType::SizeType dims = region.GetSize();
   ImageType::PointType origin = inputVol->GetOrigin();
 
-  // do supersampling if required - can be support sub-sampling as well? 
+  // do supersampling if required - can be support sub-sampling as well?
   // that would make it easy to implement a staged computation across an image pyramid
   if (supersampling > 0) {
     resultJSON["SuperSamplingFactor"] = supersampling;
@@ -384,7 +400,7 @@ std::stringstream version_number;
   output.resize(dims[0] * dims[1] * dims[2]); // the output temperature as float
   if (useInitField) {
     fprintf(stdout, "copy initial temperature values from init field using resampling...\n");
-      // regardless of the resolution of the input file we need to resample it to the output file (and copy to output)
+    // regardless of the resolution of the input file we need to resample it to the output file (and copy to output)
     OutputReaderType::Pointer initReader = OutputReaderType::New();
     initReader->SetFileName(initfield);
     initReader->Update();
@@ -589,8 +605,7 @@ std::stringstream version_number;
       double quant_step = (i + 1) * (1.0 / quantize); // lower border of quantile
       for (int j = 0; j < h_size; j++) {
         if (cum_hist[j] >= quant_step) {
-          quartiles[i] = ((float)j / (h_size - 1.0)) * (maxTemp - minTemp) +
-                         minTemp; // temperature at this index
+          quartiles[i] = ((float)j / (h_size - 1.0)) * (maxTemp - minTemp) + minTemp; // temperature at this index
           break;
         }
       }
@@ -612,7 +627,7 @@ std::stringstream version_number;
           // this label does not have a fixed temperature, lets use it
           // what is the quantile for this voxel?
           int q = 1;
-          for (int i = quartiles.size()-1; i >= 0; i--) {
+          for (int i = quartiles.size() - 1; i >= 0; i--) {
             if (temperatureIterator.Get() > quartiles[i]) {
               q = i + 2; // start counting from 1
               break;
@@ -649,8 +664,7 @@ std::stringstream version_number;
     resultJSON["output_gradient_normal"] = outdir + "/" + output_filename3;
     resultJSON["output_gradient_binormal"] = outdir + "/" + output_filename4;
 
-    fprintf(stdout,
-            "compute unit normal vector direction for each voxel using finite differences...\n");
+    fprintf(stdout, "compute unit normal vector direction for each voxel using finite differences...\n");
     // the tangent vector is in gimage, walk through the different voxel in x, y, z and compute
     // finite differences GradientPixelType as location at each point
     GradientImageType::Pointer outUN = GradientImageType::New();
@@ -680,8 +694,7 @@ std::stringstream version_number;
     double dsx = inputVol->GetSpacing()[0] * 2; // we move over the middle pixel so dT/ds
     double dsy = inputVol->GetSpacing()[1] * 2;
     double dsz = inputVol->GetSpacing()[2] * 2;
-    while (!tangentIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !unIterator.IsAtEnd() &&
-           !ubnIterator.IsAtEnd()) {
+    while (!tangentIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !unIterator.IsAtEnd() && !ubnIterator.IsAtEnd()) {
       GradientPixelType p = tangentIterator.Get();
       std::vector<float> vec(3);
       ImageType::IndexType pixelIndex = tangentIterator.GetIndex();
@@ -706,8 +719,7 @@ std::stringstream version_number;
       // compute the magnitude of the difference at these locations
       VectorType point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
       VectorType point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
-      vec[0] = (point1[0] - point2[0]) * (point1[0] - point2[0]) +
-               (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+      vec[0] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
                (point1[2] - point2[2]) * (point1[2] - point2[2]);
       vec[0] /= ds;
       //
@@ -730,8 +742,7 @@ std::stringstream version_number;
       // compute the magnitude of the difference at these locations
       point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
       point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
-      vec[1] = (point1[0] - point2[0]) * (point1[0] - point2[0]) +
-               (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+      vec[1] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
                (point1[2] - point2[2]) * (point1[2] - point2[2]);
       vec[1] /= ds;
       //
@@ -754,8 +765,7 @@ std::stringstream version_number;
       // compute the magnitude of the difference at these locations
       point1 = gimage->GetPixel(idxPoint1); // pull the data at this pixel location
       point2 = gimage->GetPixel(idxPoint2); // pull the data at this pixel location
-      vec[2] = (point1[0] - point2[0]) * (point1[0] - point2[0]) +
-               (point1[1] - point2[1]) * (point1[1] - point2[1]) +
+      vec[2] = (point1[0] - point2[0]) * (point1[0] - point2[0]) + (point1[1] - point2[1]) * (point1[1] - point2[1]) +
                (point1[2] - point2[2]) * (point1[2] - point2[2]);
       vec[2] /= ds;
       // fprintf(stdout, "%f %f %f\n", vec[0], vec[1], vec[2]);

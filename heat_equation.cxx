@@ -87,7 +87,7 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
         // ok what tissue type is this cell?
         // we only care for either being Exterior or something else
         count = toindex(i, j, k);
-        if (data[count] != 0 && zeroSpecified) { // do something (not exterior)
+        if (data[count] != 0 || zeroSpecified) { // do something (not exterior)
           // what are the values at the stencil around the current location?
           //  001  (101)  201
           // (011) (111) (211)

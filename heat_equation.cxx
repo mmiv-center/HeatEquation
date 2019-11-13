@@ -480,6 +480,9 @@ int main(int argc, char *argv[]) {
     fprintf(stdout, "step: %d/%d", i + 1, iterations);
     double change = oneStep(dims, temperatureByMaterial);
     fprintf(stdout, " change: %g\n", change);
+    if (change == 0) {
+      break; // early stopping
+    }
   }
 
   // create the output object and save
@@ -520,13 +523,45 @@ int main(int argc, char *argv[]) {
   gfilter->SetSigma(1.0f);
   gfilter->Update();
   GradientImagePointer gimage = gfilter->GetOutput();
+  GradientImagePointer gimage_for_export = gimage;
 
-  // export the potential field
+  // mask the gradient field using the fixed temperature values
+  if (1) { // mask the gradient field, set all vectors to 0 that have a fixed temperature
+    GradientImageType::Pointer gimage_masked = GradientImageType::New();
+    gimage_masked->SetRegions(region);
+    gimage_masked->Allocate();
+    gimage_masked->SetOrigin(inputVol->GetOrigin());
+    gimage_masked->SetSpacing(inputVol->GetSpacing());
+    gimage_masked->SetDirection(inputVol->GetDirection());
+    itk::ImageRegionIterator<GradientImageType> oIterator(gimage_masked, region);
+    itk::ImageRegionIterator<GradientImageType> iIterator(gimage, region);
+    itk::ImageRegionIterator<ImageType> maskIterator(inputVol, region);
+    using VectorType = itk::CovariantVector<double, 3>;
+
+    while (!oIterator.IsAtEnd() && !maskIterator.IsAtEnd() && !iIterator.IsAtEnd()) {
+      if (temperatureByMaterial.find(maskIterator.Get()) != temperatureByMaterial.end()) {
+        // this is a voxel with a fixed temperature, set gradient to 0
+        VectorType erg;
+        erg[0] = 0;
+        erg[1] = 0;
+        erg[2] = 0;
+        oIterator.Set(erg); // set to 0
+      } else {
+        oIterator.Set(iIterator.Get()); // set to input
+      }
+      ++oIterator;
+      ++iIterator;
+      ++maskIterator;
+    }
+    gimage_for_export = gimage_masked;
+  }
+
+  // export the gradient of the potential field
   typedef itk::ImageFileWriter<GradientImageType> GradientWriterType;
   GradientWriterType::Pointer writer2 = GradientWriterType::New();
   // check if that directory exists, create before writing
   writer2->SetFileName(resultJSON["output_gradient"]); // this is the tangent unit vector
-  writer2->SetInput(gimage);
+  writer2->SetInput(gimage_for_export);
 
   std::cout << "Writing the gradient of the temperature field as ";
   std::cout << resultJSON["output_gradient"] << std::endl;

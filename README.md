@@ -24,6 +24,8 @@ The HeatEquation program can be called with the following arguments:
       = Quantize the output into N different regions of equal volume.
    [ -n ]
       = Export the unit normal vector and the unit binormal vector per voxel (gradient is the tangent vector)
+   [ -f ]
+      = Specify the file format for the vector fields. Can be -f nrrd (default) or -f vtk or another format supported by itk.      
  Command fields: 
    < infile > 
       = Input mask (nifti or other file format understood by itk)
@@ -33,7 +35,7 @@ The HeatEquation program can be called with the following arguments:
 
 In general the convergence of this code is very slow. Use plenty of iterations to fill in values. The default temperature value for regions to estimate is 0, therefore its advisable to select temperature values around 0 for the simulation of the heat transfer. Complex structures should have a sufficient high resolution. You can upsample the input data by '-s <factor>' to improve the result in narrow channels. The option '-q X' allows the volume of the free-temperature labels to be segmented into equal volume regions.
 ```
-./HeatEquation -s 3 -n -i 1000 -q 3 data/data_1wm_2ven_3gm.nii /tmp/ -t 4 3 -100 2 100.99
+./HeatEquation -s 1 -f vtk -n -i 1000 -q 3 data/data_1wm_2ven_3gm.nii /tmp/ -t 4 3 -100 2 100.99
 ```
 
 The simulation could also be carried out by propagating front algorithms. Those can be implemented more efficiently and are faster converging and should produce similar results to the trivial implementation used in this module.

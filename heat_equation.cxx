@@ -205,6 +205,10 @@ int main(int argc, char *argv[]) {
       "of small to large volumes is created where each stage is initialized with the temperature field calculated from the previous stage.");
   command.AddOptionField("InitField", "initfield", MetaCommand::STRING, true);
 
+  command.SetOption("VectorFileFormat", "f", false,
+                    "Specify the file format for the vector fields. Can be -f nrrd or -f vtk or another format supported by itk.");
+  command.AddOptionField("VectorFileFormat", "vectorfileformat", MetaCommand::STRING, true);
+
   if (!command.Parse(argc, argv)) {
     return 1;
   }
@@ -223,6 +227,11 @@ int main(int argc, char *argv[]) {
   if (command.GetOptionWasSet("InitField")) {
     initfield = command.GetValueAsString("InitField", "initfield");
     useInitField = true;
+  }
+
+  std::string vectorfileextension = "nrrd";
+  if (command.GetOptionWasSet("VectorFileFormat")) {
+    vectorfileextension = command.GetValueAsString("VectorFileFormat", "vectorfileformat");
   }
 
   float supersampling = 0;
@@ -301,21 +310,21 @@ int main(int argc, char *argv[]) {
 
   std::string output_filename2;
   if (lastdot == std::string::npos)
-    output_filename2 = fn + "_gradient.nrrd";
+    output_filename2 = fn + "_gradient." + vectorfileextension;
   else
-    output_filename2 = fn.substr(0, lastdot) + "_gradient.nrrd";
+    output_filename2 = fn.substr(0, lastdot) + "_gradient." + vectorfileextension;
 
   std::string output_filename3;
   if (lastdot == std::string::npos)
-    output_filename3 = fn + "_gradient_normal.nrrd";
+    output_filename3 = fn + "_gradient_normal." + vectorfileextension;
   else
-    output_filename3 = fn.substr(0, lastdot) + "_gradient_normal.nrrd";
+    output_filename3 = fn.substr(0, lastdot) + "_gradient_normal." + vectorfileextension;
 
   std::string output_filename4;
   if (lastdot == std::string::npos)
-    output_filename4 = fn + "_gradient_binormal.nrrd";
+    output_filename4 = fn + "_gradient_binormal." + vectorfileextension;
   else
-    output_filename4 = fn.substr(0, lastdot) + "_gradient_binormal.nrrd";
+    output_filename4 = fn.substr(0, lastdot) + "_gradient_binormal." + vectorfileextension;
 
   resultJSON["output_temperature"] = outdir + "/" + output_filename;
   resultJSON["output_gradient"] = outdir + "/" + output_filename2;

@@ -22,7 +22,9 @@
 #include "json.hpp"
 #include "metaCommand.h"
 #include <boost/filesystem.hpp>
+#include <chrono>
 #include <map>
+#include <omp.h>
 
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 0
@@ -81,9 +83,24 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
   if (temperatureByMaterial.find(0) != temperatureByMaterial.end()) {
     zeroSpecified = true;
   }
-  for (int k = 1; k < dims[2] - 1; k++) {
-    for (int j = 1; j < dims[1] - 1; j++) {
-      for (int i = 1; i < dims[0] - 1; i++) {
+  // omp_set_num_threads(5);
+  // printf("  Number of processors available = %d\n", omp_get_num_procs());
+  // printf("  Number of threads =              %d\n", omp_get_max_threads());
+  // printf("  Number of threads used         = %d\n", omp_get_num_threads());
+
+  size_t ind111, ind101, ind121, ind011, ind211, ind110, ind112;
+  float val111, val101, val121, val011, val211, val110, val112;
+  float result;
+  int i, j, k;
+  int highi = dims[0] - 1;
+  int highj = dims[1] - 1;
+  int highk = dims[2] - 1;
+
+#pragma omp parallel for collapse(3) private(i, j, k, count, ind111, ind101, ind121, ind011, ind211, ind110, ind112, val111, val101, val121, val011, val211,   \
+                                             val110, val112, result)
+  for (k = 1; k < highk; k++) {
+    for (j = 1; j < highj; j++) {
+      for (i = 1; i < highi; i++) {
         // ok what tissue type is this cell?
         // we only care for either being Exterior or something else
         count = toindex(i, j, k);
@@ -94,24 +111,24 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
           //  021  (121)  221
           // and one above and one below that
           // 110, 112
-          float result = 0.0f;
+          result = 0.0f;
           if (temperatureByMaterial.find(data[count]) != temperatureByMaterial.end()) { // if the temperature is set, do not change it
             result = temperatureByMaterial[data[count]];
           } else { // otherwise compute the new temperature by the stencil values
-            size_t ind111 = count;
-            size_t ind101 = toindex(i, j - 1, k);
-            size_t ind121 = toindex(i, j + 1, k);
-            size_t ind011 = toindex(i - 1, j, k);
-            size_t ind211 = toindex(i + 1, j, k);
-            size_t ind110 = toindex(i, j, k - 1);
-            size_t ind112 = toindex(i, j, k + 1);
-            float val111 = output[ind111];
-            float val101 = output[ind101];
-            float val121 = output[ind121];
-            float val011 = output[ind011];
-            float val211 = output[ind211];
-            float val110 = output[ind110];
-            float val112 = output[ind112];
+            ind111 = count;
+            ind101 = toindex(i, j - 1, k);
+            ind121 = toindex(i, j + 1, k);
+            ind011 = toindex(i - 1, j, k);
+            ind211 = toindex(i + 1, j, k);
+            ind110 = toindex(i, j, k - 1);
+            ind112 = toindex(i, j, k + 1);
+            val111 = output[ind111];
+            val101 = output[ind101];
+            val121 = output[ind121];
+            val011 = output[ind011];
+            val211 = output[ind211];
+            val110 = output[ind110];
+            val112 = output[ind112];
             // repulsive borders (to exterior)
             if (data[ind101] == 0)
               val101 = val121;
@@ -152,6 +169,49 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
   // memcpy(output->lattice.dataPtr(), tmpData.dataPtr(), dims[0] * dims[1] * dims[2] * 4); // float
   // copy
   return diff;
+}
+
+std::string beautify_duration(std::chrono::seconds input_seconds) {
+  using namespace std::chrono;
+  typedef duration<int, std::ratio<86400>> days;
+  auto d = duration_cast<days>(input_seconds);
+  input_seconds -= d;
+  auto h = duration_cast<hours>(input_seconds);
+  input_seconds -= h;
+  auto m = duration_cast<minutes>(input_seconds);
+  input_seconds -= m;
+  auto s = duration_cast<seconds>(input_seconds);
+
+  auto dc = d.count();
+  auto hc = h.count();
+  auto mc = m.count();
+  auto sc = s.count();
+
+  std::stringstream ss;
+  ss.fill('0');
+  if (dc) {
+    ss << d.count() << "d";
+  }
+  if (dc || hc) {
+    if (dc) {
+      ss << std::setw(2);
+    } // pad if second set of numbers
+    ss << h.count() << "h";
+  }
+  if (dc || hc || mc) {
+    if (dc || hc) {
+      ss << std::setw(2);
+    }
+    ss << m.count() << "m";
+  }
+  if (dc || hc || mc || sc) {
+    if (dc || hc || mc) {
+      ss << std::setw(2);
+    }
+    ss << s.count() << 's';
+  }
+
+  return ss.str();
 }
 
 int main(int argc, char *argv[]) {
@@ -197,7 +257,7 @@ int main(int argc, char *argv[]) {
 
   command.SetOption("UnitNormalVector", "n", false,
                     "Export the unit normal vector and the unit binormal vector per voxel "
-                    "(exported gradient field is the tangent vector) in nrrd format.");
+                    "(exported gradient field is the tangent vector) in nrrd format or in another specified vector format (see -f).");
 
   command.SetOption(
       "InitField", "c", false,
@@ -477,9 +537,16 @@ int main(int argc, char *argv[]) {
 
   // run the iterations
   for (int i = 0; i < iterations; i++) {
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
     fprintf(stdout, "step: %d/%d", i + 1, iterations);
     double change = oneStep(dims, temperatureByMaterial);
-    fprintf(stdout, " change: %g\n", change);
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    int howmanymoreseconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin).count() * (iterations - (i + 1));
+    std::chrono::seconds secs(howmanymoreseconds);
+    std::string time_done = beautify_duration(std::chrono::duration_cast<std::chrono::seconds>(end - begin));
+    std::string done_in = beautify_duration(std::chrono::duration_cast<std::chrono::seconds>(secs));
+    fprintf(stdout, " change: %g (%s, done in: %s)\n", change, time_done.c_str(), done_in.c_str());
+
     if (change == 0) {
       break; // early stopping
     }

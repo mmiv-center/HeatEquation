@@ -15,10 +15,10 @@ endif()
 #SET(CMAKE_CXX_FLAGS "-std=c++11")
 #SET(CMAKE_CXX_FLAGS "-std=c++98")
 IF(LINUX)
-   SET(CMAKE_CXX_FLAGS "-std=c++11")
+   SET(CMAKE_CXX_FLAGS "-std=c++11 -fopenmp")
 ELSE()
    # find the correct path for isysroot with `xcrun --show-sdk-path`
-   SET(CMAKE_CXX_FLAGS "-std=c++11 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -I/usr/local/include")
+   SET(CMAKE_CXX_FLAGS "-std=c++11 -Xpreprocessor -fopenmp -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -I/usr/local/include")
 ENDIF()
 
 project(HeatEquation)
@@ -41,4 +41,8 @@ if(Boost_FOUND)
 endif()
 
 add_executable(HeatEquation heat_equation.cxx )
-target_link_libraries(HeatEquation  ${ITK_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(HeatEquation ${ITK_LIBRARIES} ${Boost_LIBRARIES} -lomp)
+
+
+add_executable(HeatEquationX heat_equation_multiple.cxx )
+target_link_libraries(HeatEquationX  ${ITK_LIBRARIES} ${Boost_LIBRARIES})

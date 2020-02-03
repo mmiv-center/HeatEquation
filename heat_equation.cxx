@@ -8,6 +8,9 @@
 
 // compute unit normal and unit bi-normal vector to the unit tangent vector
 
+// we can get faster if we only process the bounding box that contains the changing voxel
+// can be calculated once and provided to oneStep as i,j,k,highi,highj,highk
+
 // see http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.136.6443&rep=rep1&type=pdf
 // see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3068613/
 #include "itkGradientImageFilter.h"
@@ -21,8 +24,10 @@
 
 #include "json.hpp"
 #include "metaCommand.h"
+#include <boost/chrono.hpp>
+#include <boost/chrono/chrono_io.hpp>
 #include <boost/filesystem.hpp>
-#include <chrono>
+#include <iostream>
 #include <map>
 #include <omp.h>
 
@@ -76,7 +81,7 @@ OutputImageType::Pointer computeMagGradField(OutputImageType::Pointer input) {
 }
 
 // perform one simulation step, assume that data ends up in output (uses tmpData as temp storage)
-double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMaterial) {
+double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMaterial, unsigned long *boundingBox) {
   float omega = 0.1;
   size_t count = 0;
   bool zeroSpecified = false;
@@ -92,15 +97,30 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
   float val111, val101, val121, val011, val211, val110, val112;
   float result;
   int i, j, k;
-  int highi = dims[0] - 1;
-  int highj = dims[1] - 1;
-  int highk = dims[2] - 1;
+  int im = boundingBox[0];
+  int jm = boundingBox[1];
+  int km = boundingBox[2];
+  int highi = boundingBox[3];
+  int highj = boundingBox[4];
+  int highk = boundingBox[5];
+  if (im < 1)
+    im = 1;
+  if (jm < 1)
+    jm = 1;
+  if (km < 1)
+    km = 1;
+  if (highi > dims[0] - 1)
+    highi = dims[0] - 1;
+  if (highj > dims[1] - 1)
+    highj = dims[1] - 1;
+  if (highk > dims[2] - 1)
+    highk = dims[2] - 1;
 
-#pragma omp parallel for collapse(3) private(i, j, k, count, ind111, ind101, ind121, ind011, ind211, ind110, ind112, val111, val101, val121, val011, val211,   \
+#pragma omp parallel for collapse(3) private(i, j, count, ind111, ind101, ind121, ind011, ind211, ind110, ind112, val111, val101, val121, val011, val211,      \
                                              val110, val112, result)
-  for (k = 1; k < highk; k++) {
-    for (j = 1; j < highj; j++) {
-      for (i = 1; i < highi; i++) {
+  for (k = km; k < highk; k++) {
+    for (j = jm; j < highj; j++) {
+      for (i = im; i < highi; i++) {
         // ok what tissue type is this cell?
         // we only care for either being Exterior or something else
         count = toindex(i, j, k);
@@ -171,9 +191,9 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
   return diff;
 }
 
-std::string beautify_duration(std::chrono::seconds input_seconds) {
-  using namespace std::chrono;
-  typedef duration<int, std::ratio<86400>> days;
+std::string beautify_duration(boost::chrono::seconds input_seconds) {
+  using namespace boost::chrono;
+  typedef duration<int, boost::ratio<86400>> days;
   auto d = duration_cast<days>(input_seconds);
   input_seconds -= d;
   auto h = duration_cast<hours>(input_seconds);
@@ -291,7 +311,11 @@ int main(int argc, char *argv[]) {
 
   std::string vectorfileextension = "nrrd";
   if (command.GetOptionWasSet("VectorFileFormat")) {
-    vectorfileextension = command.GetValueAsString("VectorFileFormat", "vectorfileformat");
+    if (command.GetValueAsString("VectorFileFormat", "vectorfileformat") == "nii") {
+      fprintf(stdout, "Warning: No nii support for vector fields, will use nrrd instead.\n");
+    } else {
+      vectorfileextension = command.GetValueAsString("VectorFileFormat", "vectorfileformat");
+    }
   }
 
   float supersampling = 0;
@@ -524,28 +548,49 @@ int main(int argc, char *argv[]) {
     std::fill(output.begin(), output.end(), 0.0);
   }
 
-  data.resize(dims[0] * dims[1] * dims[2]); // the labels as int
+  unsigned long boundingBox[6] = {dims[0], dims[1], dims[2], 0, 0, 0}; // i,j,k,highi,highj,highk
+  data.resize(dims[0] * dims[1] * dims[2]);                            // the labels as int
   itk::ImageRegionIterator<ImageType> volIterator(inputVol, region);
   size_t counter = 0;
   while (!volIterator.IsAtEnd()) {
     data[counter] = volIterator.Get();
+    ImageType::IndexType pixelIndex = volIterator.GetIndex();
+    if (data[counter] != 0 && temperatureByMaterial.find(data[counter]) == temperatureByMaterial.end()) {
+      // at this index we would need to compute a value
+      if (boundingBox[0] > pixelIndex[0])
+        boundingBox[0] = pixelIndex[0];
+      if (boundingBox[1] > pixelIndex[1])
+        boundingBox[1] = pixelIndex[1];
+      if (boundingBox[2] > pixelIndex[2])
+        boundingBox[2] = pixelIndex[2];
+      if (boundingBox[3] < pixelIndex[0])
+        boundingBox[3] = pixelIndex[0];
+      if (boundingBox[4] < pixelIndex[1])
+        boundingBox[4] = pixelIndex[1];
+      if (boundingBox[5] < pixelIndex[2])
+        boundingBox[5] = pixelIndex[2];
+    }
     counter++;
     ++volIterator;
   }
   tmpData.resize(dims[0] * dims[1] * dims[2]); // temporary temperatures as float
   std::fill(tmpData.begin(), tmpData.end(), 0.0);
+  fprintf(stdout, "bounding box limited computation %lu, %lu, %lu .. %lu, %lu, %lu\n", boundingBox[0], boundingBox[1], boundingBox[2], boundingBox[3],
+          boundingBox[4], boundingBox[5]);
 
   // run the iterations
+  boost::chrono::system_clock::time_point start = boost::chrono::system_clock::now();
   for (int i = 0; i < iterations; i++) {
-    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    // single iteration
+    // boost::chrono::system_clock::time_point begin = boost::chrono::system_clock::now();
     fprintf(stdout, "step: %d/%d", i + 1, iterations);
-    double change = oneStep(dims, temperatureByMaterial);
-    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-    int howmanymoreseconds = std::chrono::duration_cast<std::chrono::seconds>(end - begin).count() * (iterations - (i + 1));
-    std::chrono::seconds secs(howmanymoreseconds);
-    std::string time_done = beautify_duration(std::chrono::duration_cast<std::chrono::seconds>(end - begin));
-    std::string done_in = beautify_duration(std::chrono::duration_cast<std::chrono::seconds>(secs));
-    fprintf(stdout, " change: %g (%s, done in: %s)\n", change, time_done.c_str(), done_in.c_str());
+    double change = oneStep(dims, temperatureByMaterial, boundingBox);
+    // boost::chrono::system_clock::time_point end = boost::chrono::system_clock::now();
+    // float howmanymoreseconds = boost::chrono::duration_cast<boost::chrono::seconds>(end - begin).count() * (iterations - (i + 1));
+
+    boost::chrono::duration<double> sec = boost::chrono::system_clock::now() - start;
+    float predicted = sec.count() / (float)i; // time per iteration
+    fprintf(stdout, " change: %g (%.2f, done in: %.2f)\n", change, predicted * i, predicted * (iterations - i));
 
     if (change == 0) {
       break; // early stopping
@@ -573,6 +618,10 @@ int main(int argc, char *argv[]) {
   // check if that directory exists, create before writing
   writer->SetFileName(resultJSON["output_temperature"]);
   writer->SetInput(outVol);
+  // check if that directory exists, create before writing
+  std::string p_txt = resultJSON["output_temperature"];
+  path out_p(p_txt);
+  create_directories(out_p.parent_path());
 
   std::cout << "Writing the temperature field as ";
   std::cout << resultJSON["output_temperature"] << std::endl;

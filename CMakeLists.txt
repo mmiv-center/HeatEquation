@@ -33,15 +33,25 @@ project(HeatEquation)
 
 # Boost
 set(boost_min_ver 1.50.0)
-set(boost_libs system filesystem timer)
+set(boost_libs system filesystem timer chrono)
 find_package(Boost ${boost_min_ver})
 
 if(Boost_FOUND)
     find_package(Boost ${boost_min_ver} COMPONENTS ${boost_libs})
 endif()
 
+OPTION (USE_OpenMP "Use OpenMP" ON)
+IF(USE_OpenMP)
+  FIND_PACKAGE(OpenMP)
+  IF(OPENMP_FOUND)
+    SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+  ENDIF()
+ENDIF()
+
+
 add_executable(HeatEquation heat_equation.cxx )
-target_link_libraries(HeatEquation ${ITK_LIBRARIES} ${Boost_LIBRARIES} -lomp)
+target_link_libraries(HeatEquation ${ITK_LIBRARIES} ${Boost_LIBRARIES} -L/usr/local/Cellar/libomp/9.0.0/lib -lomp)
 
 
 add_executable(HeatEquationX heat_equation_multiple.cxx )

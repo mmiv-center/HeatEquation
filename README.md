@@ -155,6 +155,7 @@ Alternatively use the provided docker file to build all components:
 ```
 docker build  -t heatequation -f Dockerfile .
 docker run --rm -it heatequation -h
+docker run -it --rm -v `pwd`:/data/ -e "OMP_NUM_THREADS=12" heatequation -s 2 -f nii -i 400 -q 3 /data/aseg.auto.nii /data/ttt -t 10 43 -100 42 100 4 -100 3 100 0 100
 ```
 
 ## Todo

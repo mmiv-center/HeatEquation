@@ -17,10 +17,10 @@ endif()
 #SET(CMAKE_CXX_FLAGS "-std=c++11")
 #SET(CMAKE_CXX_FLAGS "-std=c++98")
 IF(LINUX)
-   SET(CMAKE_CXX_FLAGS "-std=c++11 -fopenmp")
+   SET(CMAKE_CXX_FLAGS "-std=c++17 -fopenmp")
 ELSE()
    # find the correct path for isysroot with `xcrun --show-sdk-path`
-   SET(CMAKE_CXX_FLAGS "-std=c++11 -Xpreprocessor -fopenmp -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -I/usr/local/include")
+   SET(CMAKE_CXX_FLAGS "-std=c++17 -Xpreprocessor -fopenmp -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk -I/usr/local/include")
 ENDIF()
 
 project(HeatEquation)

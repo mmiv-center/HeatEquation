@@ -27,6 +27,7 @@
 #include <boost/chrono.hpp>
 #include <boost/chrono/chrono_io.hpp>
 #include <boost/filesystem.hpp>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <omp.h>

@@ -145,14 +145,13 @@ speed improvement on a 6 core, single CPU mac-book pro (started with "OMP_NUM_TH
 
 ## Build
 
-Have ITK installed and cmake (tested with itk 5.0.0, cmake 3.13) and:
+Provided that ITK and cmake (tested with itk 5.0.0, cmake 3.13) have been installed build using:
 ```
 cmake -DCMAKE_BUILD_TYPE=Release .
 make
 ```
-to get the executable.
 
-Alternatively use the provided docker file to build itk and the module:
+Alternatively use the provided docker file to build all components:
 ```
 docker build  -t heatequation -f Dockerfile .
 docker run --rm -it heatequation -h

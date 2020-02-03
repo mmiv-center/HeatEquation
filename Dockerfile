@@ -12,6 +12,6 @@ RUN cd /tmp/ \
 
 RUN mkdir /HeatEquation && cd /HeatEquation/ \
     && git clone https://github.com/mmiv-center/HeatEquation.git . \
-    && cmake . && make
+    && cmake -DCMAKE_BUILD_TYPE=Release . && make
 
 ENTRYPOINT [ "/HeatEquation/HeatEquation" ]

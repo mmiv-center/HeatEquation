@@ -1,3 +1,5 @@
+# create a confirmation using
+#    cmake -DCMAKE_BUILD_TYPE=Release .
 # This is the root ITK CMakeLists file.
 cmake_minimum_required(VERSION 2.8.9)
 if(COMMAND CMAKE_POLICY)

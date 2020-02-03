@@ -117,7 +117,7 @@ double oneStep(ImageType::SizeType dims, std::map<int, float> temperatureByMater
     highk = dims[2] - 1;
 
 #pragma omp parallel for collapse(3) private(i, j, count, ind111, ind101, ind121, ind011, ind211, ind110, ind112, val111, val101, val121, val011, val211,      \
-                                             val110, val112, result)
+                                             val110, val112, result) schedule(dynamic, 4)
   for (k = km; k < highk; k++) {
     for (j = jm; j < highj; j++) {
       for (i = im; i < highi; i++) {

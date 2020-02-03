@@ -132,11 +132,22 @@ In order to speed up the convergence the program can be called in multi-resoluti
 ./HeatEquation -s 3 -i 500 -c data/output/test.nii_temperature.nii -n data/test.nii.gz data/output/ -t 4 1 1 3 2
 ```
 
+The program is using OpenMP to accelerate the update of the temperature values. Given the number of threads available the
+speed improvement on a 6 core, single CPU mac-book pro (started with "OMP_NUM_THREADS=4 HeatEquation ...") is:
+
+| #threads  | time per iteration |
+|---|---|
+| 1  | 31.9s  |
+| 2  | 25.1s |
+| 4  | 18.0s |
+| 8  | 15.5s |
+| 12 | 14.8s |
+
 ## Build
 
 Have ITK installed and cmake (tested with itk 5.0.0, cmake 3.13) and:
 ```
-cmake .
+cmake -DCMAKE_BUILD_TYPE=Release .
 make
 ```
 to get the executable.

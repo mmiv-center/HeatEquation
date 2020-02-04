@@ -145,7 +145,7 @@ speed improvement on a 6 core, single CPU mac-book pro (started with "OMP_NUM_TH
 
 ## Build
 
-Provided that ITK and cmake (tested with itk 5.0.0, cmake 3.13) have been installed build using:
+Provided that ITK and cmake (tested with itk 5.0.1, cmake 3.16) have been installed build using:
 ```
 cmake -DCMAKE_BUILD_TYPE=Release .
 make
@@ -160,7 +160,7 @@ docker run -it --rm -v `pwd`:/data/ -e "OMP_NUM_THREADS=12" heatequation -s 2 -f
 
 ## Todo
 
-As we can now measure distances in space we could measure the distances between every pair of regions of interest. This would result in an explosion of potential fields but those could be managed using a lower number of weighted basis sets (PCA, but wavelets have local support). It would be interesting to compare those directions (tangent unit vectors of the potential field) with actual fiber tracts in the brain as calculated from DTI. For some pairs of regions this could fit well, for other it might not - which onces? Using all the different tangent fields we would be able to recover an upper bounds on the number of crossing fibers in the brain (given a fixed number of regions of interest).
+As we can now measure distances in space we could measure the distances between every pair of regions of interest. This would result in an explosion of potential fields but those could be managed using a lower number of weighted basis sets (PCA compression?). It would be interesting to compare those directions (tangent unit vectors of the potential field) with actual fiber tracts in the brain as calculated from DTI. For some pairs of regions this could fit well, for other it might not - which onces? Using all the different tangent fields we would be able to recover an upper bounds on the number of crossing fibers in the brain (given a fixed number of regions of interest).
 
 This model assumes an infinite load of the fibers per voxel, or at least a load that grows with the cube of the number of regions of interest. What if the fiber bundle density of a voxel is limited? In that world the potential fields would have to interact. A voxel would have to hinder the distribution of heat as its load increases. The load would be the proportion of tangent fields in its volume occupied given all the region to region connections.
 
